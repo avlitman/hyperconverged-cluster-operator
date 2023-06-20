@@ -101,6 +101,9 @@ const (
 
 	// Allow attaching a NIC to a running VMI
 	kvHotplugNicsGate = "HotplugNICs"
+
+	// Enable VM state persistence
+	kvVMPersistentState = "VMPersistentState"
 )
 
 const (
@@ -125,6 +128,7 @@ var (
 		kvDisableCustomSELinuxPolicyGate,
 		kvKubevirtSeccompProfile,
 		kvHotplugNicsGate,
+		kvVMPersistentState,
 	}
 
 	// holds a list of mandatory KubeVirt feature gates. Some of them are the hard coded feature gates and some of
@@ -427,6 +431,10 @@ func getKVConfig(hc *hcov1beta1.HyperConverged) (*kubevirtcorev1.KubeVirtConfigu
 
 	if hc.Spec.DefaultCPUModel != nil {
 		config.CPUModel = *hc.Spec.DefaultCPUModel
+	}
+
+	if hc.Spec.DefaultRuntimeClass != nil {
+		config.DefaultRuntimeClass = *hc.Spec.DefaultRuntimeClass
 	}
 
 	if hc.Spec.VMStateStorageClass != nil {

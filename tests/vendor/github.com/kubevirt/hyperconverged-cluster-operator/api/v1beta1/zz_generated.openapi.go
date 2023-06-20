@@ -213,7 +213,7 @@ func schema_kubevirt_hyperconverged_cluster_operator_api_v1beta1_HyperConvergedF
 					},
 					"deployTektonTaskResources": {
 						SchemaProps: spec.SchemaProps{
-							Description: "deploy resources (kubevirt tekton tasks and example pipelines) in Tekton tasks operator",
+							Description: "deploy resources (kubevirt tekton tasks and example pipelines) in SSP operator",
 							Default:     false,
 							Type:        []string{"boolean"},
 							Format:      "",
@@ -398,6 +398,13 @@ func schema_kubevirt_hyperconverged_cluster_operator_api_v1beta1_HyperConvergedS
 							Format:      "",
 						},
 					},
+					"defaultRuntimeClass": {
+						SchemaProps: spec.SchemaProps{
+							Description: "DefaultRuntimeClass defines a cluster default for the RuntimeClass to be used for VMIs pods if not set there. Default RuntimeClass can be changed when kubevirt is running, existing VMIs are not impacted till the next restart/live-migration when they are eventually going to consume the new default RuntimeClass.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
 					"obsoleteCPUs": {
 						SchemaProps: spec.SchemaProps{
 							Description: "ObsoleteCPUs allows avoiding scheduling of VMs for obsolete CPU models",
@@ -471,7 +478,14 @@ func schema_kubevirt_hyperconverged_cluster_operator_api_v1beta1_HyperConvergedS
 					},
 					"tektonPipelinesNamespace": {
 						SchemaProps: spec.SchemaProps{
-							Description: "TektonPipelinesNamespace defines namespace in which example pipelines will be deployed.",
+							Description: "TektonPipelinesNamespace defines namespace in which example pipelines will be deployed. If unset, then the default value is the operator namespace.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"tektonTasksNamespace": {
+						SchemaProps: spec.SchemaProps{
+							Description: "TektonTasksNamespace defines namespace in which tekton tasks will be deployed. If unset, then the default value is the operator namespace.",
 							Type:        []string{"string"},
 							Format:      "",
 						},
@@ -485,7 +499,7 @@ func schema_kubevirt_hyperconverged_cluster_operator_api_v1beta1_HyperConvergedS
 					},
 					"evictionStrategy": {
 						SchemaProps: spec.SchemaProps{
-							Description: "EvictionStrategy defines at the cluster level if the VirtualMachineInstance should be migrated instead of shut-off in case of a node drain. If the VirtualMachineInstance specific field is set it overrides the cluster level one.",
+							Description: "EvictionStrategy defines at the cluster level if the VirtualMachineInstance should be migrated instead of shut-off in case of a node drain. If the VirtualMachineInstance specific field is set it overrides the cluster level one. Defaults to LiveMigrate with multiple worker nodes, None on single worker clusters.",
 							Type:        []string{"string"},
 							Format:      "",
 						},

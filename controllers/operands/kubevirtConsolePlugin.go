@@ -27,7 +27,7 @@ import (
 
 const (
 	kvUIPluginName           = "kubevirt-plugin"
-	kvUIPluginDeploymentName = "kubevirt-console-plugin"
+	kvUIPluginDeploymentName = string(hcoutil.AppComponentUIPlugin)
 	kvUIPluginSvcName        = kvUIPluginDeploymentName + "-service"
 	kvUIPluginNameEnv        = "UI_PLUGIN_NAME"
 	kvServingCertName        = "plugin-serving-cert"
@@ -60,28 +60,25 @@ func newKvUIPluginCRHandler(_ log.Logger, Client client.Client, Scheme *runtime.
 func NewKvUIPluginDeplymnt(hc *hcov1beta1.HyperConverged) (*appsv1.Deployment, error) {
 	// The env var was validated prior to handler creation
 	kvUIPluginImage, _ := os.LookupEnv(hcoutil.KVUIPluginImageEnvV)
+	labels := getLabels(hc, hcoutil.AppComponentUIPlugin)
 
-	return &appsv1.Deployment{
+	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      kvUIPluginDeploymentName,
-			Labels:    getLabels(hc, hcoutil.AppComponentDeployment),
+			Labels:    labels,
 			Namespace: hc.Namespace,
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: pointer.Int32(1),
 			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"app": kvUIPluginDeploymentName,
-				},
+				MatchLabels: labels,
 			},
 			Strategy: appsv1.DeploymentStrategy{
 				Type: appsv1.RollingUpdateDeploymentStrategyType,
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"app": kvUIPluginDeploymentName,
-					},
+					Labels: labels,
 				},
 				Spec: corev1.PodSpec{
 					ServiceAccountName: "default",
@@ -144,29 +141,42 @@ func NewKvUIPluginDeplymnt(hc *hcov1beta1.HyperConverged) (*appsv1.Deployment, e
 				},
 			},
 		},
-	}, nil
+	}
+
+	if hc.Spec.Infra.NodePlacement != nil {
+		if hc.Spec.Infra.NodePlacement.Affinity != nil {
+			deployment.Spec.Template.Spec.NodeSelector = make(map[string]string)
+			for key, value := range hc.Spec.Infra.NodePlacement.NodeSelector {
+				deployment.Spec.Template.Spec.NodeSelector[key] = value
+			}
+		}
+
+		if hc.Spec.Infra.NodePlacement.Affinity != nil {
+			deployment.Spec.Template.Spec.Affinity = hc.Spec.Infra.NodePlacement.Affinity.DeepCopy()
+		}
+
+		if hc.Spec.Infra.NodePlacement.Tolerations != nil {
+			deployment.Spec.Template.Spec.Tolerations = make([]corev1.Toleration, len(hc.Spec.Infra.NodePlacement.Tolerations))
+			copy(deployment.Spec.Template.Spec.Tolerations, hc.Spec.Infra.NodePlacement.Tolerations)
+		}
+	}
+	return deployment, nil
 }
 
 func NewKvUIPluginSvc(hc *hcov1beta1.HyperConverged) *corev1.Service {
 	servicePorts := []corev1.ServicePort{
 		{Port: hcoutil.UIPluginServerPort, Name: kvUIPluginDeploymentName + "-port", Protocol: corev1.ProtocolTCP, TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: hcoutil.UIPluginServerPort}},
 	}
-	pluginName := kvUIPluginDeploymentName
-	val, ok := os.LookupEnv(kvUIPluginNameEnv)
-	if ok && val != "" {
-		pluginName = val
-	}
-	labelSelect := map[string]string{"app": pluginName}
 
 	spec := corev1.ServiceSpec{
 		Ports:    servicePorts,
-		Selector: labelSelect,
+		Selector: map[string]string{hcoutil.AppLabelComponent: string(hcoutil.AppComponentUIPlugin)},
 	}
 
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   kvUIPluginSvcName,
-			Labels: getLabels(hc, hcoutil.AppComponentDeployment),
+			Labels: getLabels(hc, hcoutil.AppComponentUIPlugin),
 			Annotations: map[string]string{
 				"service.beta.openshift.io/serving-cert-secret-name": kvServingCertName,
 			},
@@ -196,7 +206,7 @@ func NewKVUINginxCM(hc *hcov1beta1.HyperConverged) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      nginxConfigMapName,
-			Labels:    getLabels(hc, hcoutil.AppComponentDeployment),
+			Labels:    getLabels(hc, hcoutil.AppComponentUIPlugin),
 			Namespace: hc.Namespace,
 		},
 		Data: map[string]string{
@@ -209,7 +219,7 @@ func NewKVConsolePlugin(hc *hcov1beta1.HyperConverged) *consolev1.ConsolePlugin 
 	return &consolev1.ConsolePlugin{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   kvUIPluginName,
-			Labels: getLabels(hc, hcoutil.AppComponentDeployment),
+			Labels: getLabels(hc, hcoutil.AppComponentUIPlugin),
 		},
 		Spec: consolev1.ConsolePluginSpec{
 			DisplayName: "Kubevirt Console Plugin",

@@ -51,7 +51,6 @@ spec:
                 server:
                   duration: 24h0m0s
                   renewBefore: 12h0m0s
-              evictionStrategy: LiveMigrate
               featureGates:
                 deployKubeSecondaryDNS: false
                 deployTektonTaskResources: false
@@ -427,7 +426,8 @@ spec:
                                             If Requests is omitted for a container,
                                             it defaults to Limits if that is explicitly
                                             specified, otherwise to an implementation-defined
-                                            value. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                                            value. Requests cannot exceed Limits.
+                                            More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                                           type: object
                                       type: object
                                     selector:
@@ -887,7 +887,8 @@ spec:
                                             If Requests is omitted for a container,
                                             it defaults to Limits if that is explicitly
                                             specified, otherwise to an implementation-defined
-                                            value. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                                            value. Requests cannot exceed Limits.
+                                            More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                                           type: object
                                       type: object
                                     selector:
@@ -1028,12 +1029,19 @@ spec:
                   host-model will be set. Default CPU model can be changed when kubevirt
                   is running.'
                 type: string
+              defaultRuntimeClass:
+                description: DefaultRuntimeClass defines a cluster default for the
+                  RuntimeClass to be used for VMIs pods if not set there. Default
+                  RuntimeClass can be changed when kubevirt is running, existing VMIs
+                  are not impacted till the next restart/live-migration when they
+                  are eventually going to consume the new default RuntimeClass.
+                type: string
               evictionStrategy:
-                default: LiveMigrate
                 description: EvictionStrategy defines at the cluster level if the
                   VirtualMachineInstance should be migrated instead of shut-off in
                   case of a node drain. If the VirtualMachineInstance specific field
-                  is set it overrides the cluster level one.
+                  is set it overrides the cluster level one. Defaults to LiveMigrate
+                  with multiple worker nodes, None on single worker clusters.
                 enum:
                 - None
                 - LiveMigrate
@@ -1056,7 +1064,7 @@ spec:
                   deployTektonTaskResources:
                     default: false
                     description: deploy resources (kubevirt tekton tasks and example
-                      pipelines) in Tekton tasks operator
+                      pipelines) in SSP operator
                     type: boolean
                   disableMDevConfiguration:
                     default: false
@@ -2365,7 +2373,8 @@ spec:
                         description: 'Requests describes the minimum amount of compute
                           resources required. If Requests is omitted for a container,
                           it defaults to Limits if that is explicitly specified, otherwise
-                          to an implementation-defined value. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                          to an implementation-defined value. Requests cannot exceed
+                          Limits. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                         type: object
                     type: object
                 type: object
@@ -2392,7 +2401,13 @@ spec:
                 type: object
               tektonPipelinesNamespace:
                 description: TektonPipelinesNamespace defines namespace in which example
-                  pipelines will be deployed.
+                  pipelines will be deployed. If unset, then the default value is
+                  the operator namespace.
+                type: string
+              tektonTasksNamespace:
+                description: TektonTasksNamespace defines namespace in which tekton
+                  tasks will be deployed. If unset, then the default value is the
+                  operator namespace.
                 type: string
               tlsSecurityProfile:
                 description: TLSSecurityProfile specifies the settings for TLS connections
@@ -3905,7 +3920,8 @@ spec:
                                             If Requests is omitted for a container,
                                             it defaults to Limits if that is explicitly
                                             specified, otherwise to an implementation-defined
-                                            value. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                                            value. Requests cannot exceed Limits.
+                                            More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                                           type: object
                                       type: object
                                     selector:
@@ -4365,7 +4381,8 @@ spec:
                                             If Requests is omitted for a container,
                                             it defaults to Limits if that is explicitly
                                             specified, otherwise to an implementation-defined
-                                            value. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                                            value. Requests cannot exceed Limits.
+                                            More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                                           type: object
                                       type: object
                                     selector:

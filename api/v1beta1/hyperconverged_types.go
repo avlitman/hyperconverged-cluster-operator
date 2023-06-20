@@ -112,6 +112,12 @@ type HyperConvergedSpec struct {
 	// +optional
 	DefaultCPUModel *string `json:"defaultCPUModel,omitempty"`
 
+	// DefaultRuntimeClass defines a cluster default for the RuntimeClass to be used for VMIs pods if not set there.
+	// Default RuntimeClass can be changed when kubevirt is running, existing VMIs are not impacted till
+	// the next restart/live-migration when they are eventually going to consume the new default RuntimeClass.
+	// +optional
+	DefaultRuntimeClass *string `json:"defaultRuntimeClass,omitempty"`
+
 	// ObsoleteCPUs allows avoiding scheduling of VMs for obsolete CPU models
 	// +optional
 	ObsoleteCPUs *HyperConvergedObsoleteCPUs `json:"obsoleteCPUs,omitempty"`
@@ -164,10 +170,15 @@ type HyperConvergedSpec struct {
 	// +optional
 	TLSSecurityProfile *openshiftconfigv1.TLSSecurityProfile `json:"tlsSecurityProfile,omitempty"`
 
-	// TektonPipelinesNamespace defines namespace in which example pipelines will
-	// be deployed.
+	// TektonPipelinesNamespace defines namespace in which example pipelines will be deployed.
+	// If unset, then the default value is the operator namespace.
 	// +optional
 	TektonPipelinesNamespace *string `json:"tektonPipelinesNamespace,omitempty"`
+
+	// TektonTasksNamespace defines namespace in which tekton tasks will be deployed.
+	// If unset, then the default value is the operator namespace.
+	// +optional
+	TektonTasksNamespace *string `json:"tektonTasksNamespace,omitempty"`
 
 	// KubeSecondaryDNSNameServerIP defines name server IP used by KubeSecondaryDNS
 	// +optional
@@ -175,8 +186,7 @@ type HyperConvergedSpec struct {
 
 	// EvictionStrategy defines at the cluster level if the VirtualMachineInstance should be
 	// migrated instead of shut-off in case of a node drain. If the VirtualMachineInstance specific
-	// field is set it overrides the cluster level one.
-	// +kubebuilder:default=LiveMigrate
+	// field is set it overrides the cluster level one. Defaults to LiveMigrate with multiple worker nodes, None on single worker clusters.
 	// +kubebuilder:validation:Enum=None;LiveMigrate;External
 	// +optional
 	EvictionStrategy *v1.EvictionStrategy `json:"evictionStrategy,omitempty"`
@@ -326,7 +336,7 @@ type HyperConvergedFeatureGates struct {
 	// +default=true
 	EnableCommonBootImageImport *bool `json:"enableCommonBootImageImport,omitempty"`
 
-	// deploy resources (kubevirt tekton tasks and example pipelines) in Tekton tasks operator
+	// deploy resources (kubevirt tekton tasks and example pipelines) in SSP operator
 	// +optional
 	// +kubebuilder:default=false
 	// +default=false
@@ -624,7 +634,7 @@ type HyperConverged struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	// +kubebuilder:default={"certConfig": {"ca": {"duration": "48h0m0s", "renewBefore": "24h0m0s"}, "server": {"duration": "24h0m0s", "renewBefore": "12h0m0s"}}, "evictionStrategy": "LiveMigrate", "featureGates": {"withHostPassthroughCPU": false, "enableCommonBootImageImport": true, "deployTektonTaskResources": false, "deployKubeSecondaryDNS": false}, "liveMigrationConfig": {"completionTimeoutPerGiB": 800, "parallelMigrationsPerCluster": 5, "parallelOutboundMigrationsPerNode": 2, "progressTimeout": 150, "allowAutoConverge": false, "allowPostCopy": false}, "uninstallStrategy": "BlockUninstallIfWorkloadsExist"}
+	// +kubebuilder:default={"certConfig": {"ca": {"duration": "48h0m0s", "renewBefore": "24h0m0s"}, "server": {"duration": "24h0m0s", "renewBefore": "12h0m0s"}}, "featureGates": {"withHostPassthroughCPU": false, "enableCommonBootImageImport": true, "deployTektonTaskResources": false, "deployKubeSecondaryDNS": false}, "liveMigrationConfig": {"completionTimeoutPerGiB": 800, "parallelMigrationsPerCluster": 5, "parallelOutboundMigrationsPerNode": 2, "progressTimeout": 150, "allowAutoConverge": false, "allowPostCopy": false}, "uninstallStrategy": "BlockUninstallIfWorkloadsExist"}
 	// +optional
 	Spec   HyperConvergedSpec   `json:"spec,omitempty"`
 	Status HyperConvergedStatus `json:"status,omitempty"`

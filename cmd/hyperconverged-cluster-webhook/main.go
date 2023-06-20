@@ -2,10 +2,16 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"os"
+	"path/filepath"
+
+	"github.com/openshift/library-go/pkg/crypto"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	webhookscontrollers "github.com/kubevirt/hyperconverged-cluster-operator/controllers/webhooks"
+	"github.com/kubevirt/hyperconverged-cluster-operator/pkg/webhooks/validator"
 
 	csvv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -30,7 +36,6 @@ import (
 	"github.com/kubevirt/hyperconverged-cluster-operator/cmd/cmdcommon"
 	hcoutil "github.com/kubevirt/hyperconverged-cluster-operator/pkg/util"
 	"github.com/kubevirt/hyperconverged-cluster-operator/pkg/webhooks"
-	ttov1alpha1 "github.com/kubevirt/tekton-tasks-operator/api/v1alpha1"
 	kubevirtcorev1 "kubevirt.io/api/core/v1"
 	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	sspv1beta1 "kubevirt.io/ssp-operator/api/v1beta1"
@@ -47,7 +52,6 @@ var (
 		cdiv1beta1.AddToScheme,
 		networkaddonsv1.AddToScheme,
 		sspv1beta1.AddToScheme,
-		ttov1alpha1.AddToScheme,
 		admissionregistrationv1.AddToScheme,
 		openshiftconfigv1.Install,
 		kubevirtcorev1.AddToScheme,
@@ -71,6 +75,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Make sure the certificates are mounted, this should be handled by the OLM
+	webhookCertDir := webhooks.GetWebhookCertDir()
+	certs := []string{filepath.Join(webhookCertDir, hcoutil.WebhookCertName), filepath.Join(webhookCertDir, hcoutil.WebhookKeyName)}
+	for _, fname := range certs {
+		if _, err := os.Stat(fname); err != nil {
+			logger.Error(err, "CSV certificates were not found, skipping webhook initialization")
+			cmdHelper.ExitOnError(err, "CSV certificates were not found, skipping webhook initialization")
+		}
+	}
+
 	// Setup Scheme for all resources
 	scheme := apiruntime.NewScheme()
 	cmdHelper.AddToScheme(scheme, resourcesSchemeFuncs)
@@ -84,6 +98,13 @@ func main() {
 		LivenessEndpointName:   hcoutil.LivenessEndpointName,
 		LeaderElection:         false,
 		Scheme:                 scheme,
+		WebhookServer: webhook.NewServer(webhook.Options{
+			CertDir:  webhooks.GetWebhookCertDir(),
+			CertName: hcoutil.WebhookCertName,
+			KeyName:  hcoutil.WebhookKeyName,
+			Port:     hcoutil.WebhookPort,
+			TLSOpts:  []func(*tls.Config){MutateTLSConfig},
+		}),
 	})
 	cmdHelper.ExitOnError(err, "failed to create manager")
 
@@ -155,5 +176,17 @@ func main() {
 		logger.Error(err, "Manager exited non-zero")
 		eventEmitter.EmitEvent(nil, corev1.EventTypeWarning, "UnexpectedError", "HyperConverged crashed; "+err.Error())
 		os.Exit(1)
+	}
+}
+
+func MutateTLSConfig(cfg *tls.Config) {
+	// This callback executes on each client call returning a new config to be used
+	// please be aware that the APIServer is using http keepalive so this is going to
+	// be executed only after a while for fresh connections and not on existing ones
+	cfg.GetConfigForClient = func(_ *tls.ClientHelloInfo) (*tls.Config, error) {
+		cipherNames, minTypedTLSVersion := validator.SelectCipherSuitesAndMinTLSVersion()
+		cfg.CipherSuites = crypto.CipherSuitesOrDie(crypto.OpenSSLToIANACipherSuites(cipherNames))
+		cfg.MinVersion = crypto.TLSVersionOrDie(string(minTypedTLSVersion))
+		return cfg, nil
 	}
 }

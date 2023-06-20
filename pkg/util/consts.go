@@ -12,7 +12,6 @@ const (
 	CdiVersionEnvV                   = "CDI_VERSION"
 	CnaoVersionEnvV                  = "NETWORK_ADDONS_VERSION"
 	SspVersionEnvV                   = "SSP_VERSION"
-	TtoVersionEnvV                   = "TTO_VERSION"
 	HppoVersionEnvV                  = "HPPO_VERSION"
 	KVUIPluginImageEnvV              = "KV_CONSOLE_PLUGIN_IMAGE"
 	HcoValidatingWebhook             = "validate-hco.kubevirt.io"
@@ -80,5 +79,5 @@ const (
 	AppComponentMonitoring AppComponent = "monitoring"
 	AppComponentSchedule   AppComponent = "schedule"
 	AppComponentDeployment AppComponent = "deployment"
-	AppComponentTekton     AppComponent = "tekton"
+	AppComponentUIPlugin   AppComponent = "kubevirt-console-plugin"
 )

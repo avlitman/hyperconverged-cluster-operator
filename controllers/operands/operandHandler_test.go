@@ -38,7 +38,7 @@ var _ = Describe("Test operandHandler", func() {
 
 		It("should create all objects are created", func() {
 			hco := commontestutils.NewHco()
-			cli := commontestutils.InitClient([]runtime.Object{hcoNamespace, qsCrd, hco})
+			cli := commontestutils.InitClient([]client.Object{hcoNamespace, qsCrd, hco})
 
 			eventEmitter := commontestutils.NewEventEmitterMock()
 			ci := commontestutils.ClusterInfoMock{}
@@ -74,11 +74,6 @@ var _ = Describe("Test operandHandler", func() {
 					EventType: corev1.EventTypeNormal,
 					Reason:    "Created",
 					Msg:       "Created SSP ssp-kubevirt-hyperconverged",
-				},
-				{
-					EventType: corev1.EventTypeNormal,
-					Reason:    "Created",
-					Msg:       "Created TektonTasks tto-kubevirt-hyperconverged",
 				},
 				{
 					EventType: corev1.EventTypeNormal,
@@ -140,7 +135,7 @@ var _ = Describe("Test operandHandler", func() {
 
 		It("should handle errors on ensure loop", func() {
 			hco := commontestutils.NewHco()
-			cli := commontestutils.InitClient([]runtime.Object{hcoNamespace, qsCrd, hco})
+			cli := commontestutils.InitClient([]client.Object{hcoNamespace, qsCrd, hco})
 
 			eventEmitter := commontestutils.NewEventEmitterMock()
 			ci := commontestutils.ClusterInfoMock{}
@@ -182,7 +177,7 @@ var _ = Describe("Test operandHandler", func() {
 
 		It("make sure the all objects are deleted", func() {
 			hco := commontestutils.NewHco()
-			cli := commontestutils.InitClient([]runtime.Object{hcoNamespace, qsCrd, hco})
+			cli := commontestutils.InitClient([]client.Object{hcoNamespace, qsCrd, hco})
 
 			eventEmitter := commontestutils.NewEventEmitterMock()
 			ci := commontestutils.ClusterInfoMock{}
@@ -221,11 +216,6 @@ var _ = Describe("Test operandHandler", func() {
 					EventType: corev1.EventTypeNormal,
 					Reason:    "Killing",
 					Msg:       "Removed SSP ssp-kubevirt-hyperconverged",
-				},
-				{
-					EventType: corev1.EventTypeNormal,
-					Reason:    "Killing",
-					Msg:       "Removed TektonTasks tto-kubevirt-hyperconverged",
 				},
 				{
 					EventType: corev1.EventTypeNormal,
@@ -275,7 +265,7 @@ var _ = Describe("Test operandHandler", func() {
 
 		It("delete KV error handling", func() {
 			hco := commontestutils.NewHco()
-			cli := commontestutils.InitClient([]runtime.Object{hcoNamespace, qsCrd, hco})
+			cli := commontestutils.InitClient([]client.Object{hcoNamespace, qsCrd, hco})
 
 			eventEmitter := commontestutils.NewEventEmitterMock()
 			ci := commontestutils.ClusterInfoMock{}
@@ -324,7 +314,7 @@ var _ = Describe("Test operandHandler", func() {
 
 		It("delete CDI error handling", func() {
 			hco := commontestutils.NewHco()
-			cli := commontestutils.InitClient([]runtime.Object{hcoNamespace, qsCrd, hco})
+			cli := commontestutils.InitClient([]client.Object{hcoNamespace, qsCrd, hco})
 
 			eventEmitter := commontestutils.NewEventEmitterMock()
 			ci := commontestutils.ClusterInfoMock{}
@@ -374,7 +364,7 @@ var _ = Describe("Test operandHandler", func() {
 
 		It("default delete error handling", func() {
 			hco := commontestutils.NewHco()
-			cli := commontestutils.InitClient([]runtime.Object{hcoNamespace, qsCrd, hco})
+			cli := commontestutils.InitClient([]client.Object{hcoNamespace, qsCrd, hco})
 
 			fakeError := fmt.Errorf("fake CNA deletion error")
 			eventEmitter := commontestutils.NewEventEmitterMock()
@@ -424,7 +414,7 @@ var _ = Describe("Test operandHandler", func() {
 
 		It("delete timeout error handling", func() {
 			hco := commontestutils.NewHco()
-			cli := commontestutils.InitClient([]runtime.Object{hcoNamespace, qsCrd, hco})
+			cli := commontestutils.InitClient([]client.Object{hcoNamespace, qsCrd, hco})
 
 			eventEmitter := commontestutils.NewEventEmitterMock()
 			ci := commontestutils.ClusterInfoMock{}

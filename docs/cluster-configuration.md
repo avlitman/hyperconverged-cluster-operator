@@ -152,10 +152,10 @@ the [dataImportCronTemplates field](#configure-custom-golden-images), even if th
 **Default**: `true`
 
 ### deployTektonTaskResources Feature Gate
-Set the `deployTektonTaskResources` feature gate to true to allow Tekton Tasks operator (TTO) to deploy its resources. TTO will
-deploy example pipelines and cluster tasks which enables tekton to work with VMs, disks and common-templates.
+Set the `deployTektonTaskResources` feature gate to true to allow SSP operator to deploy its resources. SSP operator will 
+deploy example pipelines and tasks which enables tekton to work with VMs, disks and common-templates.
 
-**Note**: Once `deployTektonTaskResources` is set to true, TTO will not delete deployed resources if `deployTektonTaskResources` is
+**Note**: Once `deployTektonTaskResources` is set to true, SSP operator will not delete deployed resources if `deployTektonTaskResources` is 
 reverted back to false.
 
 **Default**: `false`
@@ -578,6 +578,19 @@ spec:
   defaultCPUModel: "EPYC"
 ```
 
+## Default RuntimeClass
+User can specify a cluster-wide default RuntimeClass for VMIs pods: default RuntimeClass is set when vmi doesn't have any specific RuntimeClass.
+When vmi RuntimeClass is set, then vmi's RuntimeClass is preferred. When default RuntimeClass is not set and vmi's RuntimeClass is not set too, RuntimeClass will not be configured on VMIs pods .
+Default RuntimeClass can be changed when kubevirt is running, existing VMIs are not impacted till the next restart/live-migration when they are eventually going to consume the new default RuntimeClass.
+```yaml
+apiVersion: hco.kubevirt.io/v1beta1
+kind: HyperConverged
+metadata:
+  name: kubevirt-hyperconverged
+spec:
+  defaultRuntimeClass: "myCustomRuntimeClass"
+```
+
 ## Common templates namespace
 User can specify namespace in which common templates will be deployed. This will override default `openshift` namespace.
 ```yaml
@@ -599,6 +612,19 @@ metadata:
 spec:
   tektonPipelinesNamespace: kubevirt
 ```
+In case the namespace is unspecified, the operator namespace will serve as the default value.
+
+## Tekton Tasks namespace
+User can specify namespace in which tekton tasks will be deployed.
+```yaml
+apiVersion: hco.kubevirt.io/v1beta1
+kind: HyperConverged
+metadata:
+  name: kubevirt-hyperconverged
+spec:
+  tektonTasksNamespace: kubevirt
+```
+In case the namespace is unspecified, the operator namespace will serve as the default value.
 
 ## Enable eventual launcher updates by default
 us the HyperConverged `spec.workloadUpdateStrategy` object to define how to handle automated workload updates at the cluster
@@ -821,7 +847,7 @@ Possible values:
 - `LiveMigrate` migrate the VM on eviction.
 - `External` block eviction and notify an external controller.
 
-`LiveMigrate` is the default behaviour.
+`LiveMigrate` is the default behaviour with multiple worker nodes, `None` on single worker clusters.
 
 
 ## VM state storage class

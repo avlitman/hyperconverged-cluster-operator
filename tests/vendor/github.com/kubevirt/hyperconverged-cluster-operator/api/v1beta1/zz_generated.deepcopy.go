@@ -355,6 +355,11 @@ func (in *HyperConvergedSpec) DeepCopyInto(out *HyperConvergedSpec) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.DefaultRuntimeClass != nil {
+		in, out := &in.DefaultRuntimeClass, &out.DefaultRuntimeClass
+		*out = new(string)
+		**out = **in
+	}
 	if in.ObsoleteCPUs != nil {
 		in, out := &in.ObsoleteCPUs, &out.ObsoleteCPUs
 		*out = new(HyperConvergedObsoleteCPUs)
@@ -395,6 +400,11 @@ func (in *HyperConvergedSpec) DeepCopyInto(out *HyperConvergedSpec) {
 	}
 	if in.TektonPipelinesNamespace != nil {
 		in, out := &in.TektonPipelinesNamespace, &out.TektonPipelinesNamespace
+		*out = new(string)
+		**out = **in
+	}
+	if in.TektonTasksNamespace != nil {
+		in, out := &in.TektonTasksNamespace, &out.TektonTasksNamespace
 		*out = new(string)
 		**out = **in
 	}
