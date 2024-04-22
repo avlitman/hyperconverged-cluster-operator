@@ -11,7 +11,7 @@ WEBHOOK_IMAGE      ?= $(REGISTRY_NAMESPACE)/hyperconverged-cluster-webhook
 FUNC_TEST_IMAGE    ?= $(REGISTRY_NAMESPACE)/hyperconverged-cluster-functest
 VIRT_ARTIFACTS_SERVER ?= $(REGISTRY_NAMESPACE)/virt-artifacts-server
 LDFLAGS            ?= -w -s
-GOLANDCI_LINT_VERSION ?= v1.53.2
+GOLANDCI_LINT_VERSION ?= v1.57.0
 
 
 
@@ -22,7 +22,7 @@ DO=eval
 export JOB_TYPE=prow
 endif
 
-sanity: generate generate-doc validate-no-offensive-lang goimport lint-metrics
+sanity: generate generate-doc validate-no-offensive-lang goimport lint-metrics lint-monitoring
 	go version
 	go fmt ./...
 	go mod tidy -v
@@ -110,7 +110,7 @@ container-build-artifacts-server:
 container-push: quay-login container-push-operator container-push-webhook container-push-functest container-push-artifacts-server
 
 quay-login:
-	podman login $(IMAGE_REGISTRY) -u $(QUAY_USERNAME) -p $(QUAY_PASSWORD)
+	podman login $(IMAGE_REGISTRY) -u $(QUAY_USERNAME) -p "$(QUAY_PASSWORD)"
 
 container-push-operator:
 	. "hack/cri-bin.sh" && $$CRI_BIN push $$CRI_INSECURE $(IMAGE_REGISTRY)/$(OPERATOR_IMAGE):$(IMAGE_TAG)
@@ -172,6 +172,12 @@ upgrade-test:
 upgrade-test-index-image:
 	./hack/upgrade-test-index-image.sh
 
+upgrade-test-operator-sdk:
+	./hack/upgrade-test-operator-sdk.sh
+
+consecutive-upgrades-test:
+	./hack/consecutive-upgrades-test.sh
+
 kubevirt-nightly-test:
 	./hack/kubevirt-nightly-test.sh
 
@@ -227,6 +233,10 @@ validate-no-offensive-lang:
 lint-metrics:
 	./hack/prom_metric_linter.sh --operator-name="kubevirt" --sub-operator-name="hco"
 
+lint-monitoring:
+	go install github.com/kubevirt/monitoring/monitoringlinter/cmd/monitoringlinter@e2be790
+	monitoringlinter ./...
+
 .PHONY: start \
 		clean \
 		build \
@@ -273,5 +283,6 @@ lint-metrics:
 		generate-doc \
 		validate-no-offensive-lang \
 		lint-metrics \
+		lint-monitoring \
 		sanity \
 		goimport

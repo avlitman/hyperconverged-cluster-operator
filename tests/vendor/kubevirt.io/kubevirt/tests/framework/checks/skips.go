@@ -16,6 +16,7 @@ import (
 
 	"github.com/onsi/ginkgo/v2"
 
+	kubev1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
 
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
@@ -118,17 +119,24 @@ func SkipTestIfNotSEVCapable() {
 	nodes := libnode.GetAllSchedulableNodes(virtClient)
 
 	for _, node := range nodes.Items {
-		if IsSEVCapable(&node) {
+		if IsSEVCapable(&node, kubev1.SEVLabel) {
 			return
 		}
 	}
 	ginkgo.Skip("no node capable of running SEV workloads detected", 1)
 }
 
-func SkipIfNonRoot(feature string) {
-	if HasFeature(virtconfig.NonRoot) {
-		ginkgo.Skip(fmt.Sprintf("NonRoot implementation doesn't support %s", feature))
+func SkipTestIfNotSEVESCapable() {
+	virtClient, err := kubecli.GetKubevirtClient()
+	util.PanicOnError(err)
+	nodes := libnode.GetAllSchedulableNodes(virtClient)
+
+	for _, node := range nodes.Items {
+		if IsSEVCapable(&node, kubev1.SEVESLabel) {
+			return
+		}
 	}
+	ginkgo.Skip("no node capable of running SEV-ES workloads detected", 1)
 }
 
 func SkipIfMissingRequiredImage(virtClient kubecli.KubevirtClient, imageName string) {
@@ -188,16 +196,6 @@ func SkipIfMultiReplica(virtClient kubecli.KubevirtClient) {
 	}
 }
 
-// SkipIfVersionBelow will skip tests if it runs on an environment with k8s version below specified
-func SkipIfVersionBelow(message string, expectedVersion string) {
-	curVersion, err := cluster.GetKubernetesVersion()
-	gomega.Expect(err).NotTo(gomega.HaveOccurred())
-
-	if curVersion < expectedVersion {
-		ginkgo.Skip(message)
-	}
-}
-
 func SkipIfOpenShift(message string) {
 	if IsOpenShift() {
 		ginkgo.Skip("Openshift detected: " + message)
@@ -223,5 +221,11 @@ func SkipIfMigrationIsNotPossible() {
 func SkipIfARM64(arch string, message string) {
 	if IsARM64(arch) {
 		ginkgo.Skip("Skip test on arm64: " + message)
+	}
+}
+
+func SkipIfRunningOnKindInfra(message string) {
+	if IsRunningOnKindInfra() {
+		ginkgo.Skip("Skip test on kind infra: " + message)
 	}
 }

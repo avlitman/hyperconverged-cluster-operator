@@ -11,12 +11,12 @@ import (
 	"sort"
 	"strings"
 
-	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	sspv1beta2 "kubevirt.io/ssp-operator/api/v1beta2"
 
 	hcov1beta1 "github.com/kubevirt/hyperconverged-cluster-operator/api/v1beta1"
@@ -29,7 +29,7 @@ const (
 	// This is initially set to 2 replicas, to maintain the behavior of the previous SSP operator.
 	// After SSP implements its defaulting webhook, we can change this to 0 replicas,
 	// and let the webhook set the default.
-	defaultTemplateValidatorReplicas = 2
+	defaultTemplateValidatorReplicas = int32(2)
 
 	defaultCommonTemplatesNamespace = hcoutil.OpenshiftNamespace
 
@@ -98,14 +98,14 @@ func (*sspHooks) updateCr(req *common.HcoRequest, client client.Client, exists r
 	if !ok1 || !ok2 {
 		return false, false, errors.New("can't convert to SSP")
 	}
-	if !reflect.DeepEqual(found.Spec, ssp.Spec) ||
-		!reflect.DeepEqual(found.Labels, ssp.Labels) {
+	if !reflect.DeepEqual(ssp.Spec, found.Spec) ||
+		!util.CompareLabels(ssp, found) {
 		if req.HCOTriggered {
 			req.Logger.Info("Updating existing SSP's Spec to new opinionated values")
 		} else {
 			req.Logger.Info("Reconciling an externally updated SSP's Spec to its opinionated values")
 		}
-		util.DeepCopyLabels(&ssp.ObjectMeta, &found.ObjectMeta)
+		util.MergeLabels(&ssp.ObjectMeta, &found.ObjectMeta)
 		ssp.Spec.DeepCopyInto(&found.Spec)
 		err := client.Update(req.Ctx, found)
 		if err != nil {
@@ -124,7 +124,6 @@ func (h *sspHooks) justBeforeComplete(req *common.HcoRequest) {
 }
 
 func NewSSP(hc *hcov1beta1.HyperConverged, opts ...string) (*sspv1beta2.SSP, []hcov1beta1.DataImportCronTemplateStatus, error) {
-	replicas := int32(defaultTemplateValidatorReplicas)
 	templatesNamespace := defaultCommonTemplatesNamespace
 
 	if hc.Spec.CommonTemplatesNamespace != nil {
@@ -145,7 +144,7 @@ func NewSSP(hc *hcov1beta1.HyperConverged, opts ...string) (*sspv1beta2.SSP, []h
 
 	spec := sspv1beta2.SSPSpec{
 		TemplateValidator: &sspv1beta2.TemplateValidator{
-			Replicas: &replicas,
+			Replicas: ptr.To(defaultTemplateValidatorReplicas),
 		},
 		CommonTemplates: sspv1beta2.CommonTemplates{
 			Namespace:               templatesNamespace,
@@ -163,6 +162,14 @@ func NewSSP(hc *hcov1beta1.HyperConverged, opts ...string) (*sspv1beta2.SSP, []h
 	if hc.Spec.FeatureGates.DeployTektonTaskResources != nil {
 		spec.FeatureGates.DeployTektonTaskResources = *hc.Spec.FeatureGates.DeployTektonTaskResources
 	}
+
+	if hc.Spec.FeatureGates.DeployVMConsoleProxy != nil {
+		spec.FeatureGates.DeployVmConsoleProxy = *hc.Spec.FeatureGates.DeployVMConsoleProxy
+	}
+
+	// This feature gate is set to true in 4.15.
+	// TODO(4.16): Set it to false, and set a similar feature gate on kubevirt CR.
+	spec.FeatureGates.DeployCommonInstancetypes = ptr.To(true)
 
 	// Default value is the operator namespace
 	pipelinesNamespace := getNamespace(hc.Namespace, opts)
@@ -253,7 +260,7 @@ func getDataImportCronTemplates(hc *hcov1beta1.HyperConverged) ([]hcov1beta1.Dat
 
 	var dictList []hcov1beta1.DataImportCronTemplateStatus
 	if hc.Spec.FeatureGates.EnableCommonBootImageImport != nil && *hc.Spec.FeatureGates.EnableCommonBootImageImport {
-		dictList = getCommonDicts(dictList, crDicts)
+		dictList = getCommonDicts(dictList, crDicts, hc)
 	}
 	dictList = getCustomDicts(dictList, crDicts)
 
@@ -262,7 +269,7 @@ func getDataImportCronTemplates(hc *hcov1beta1.HyperConverged) ([]hcov1beta1.Dat
 	return dictList, nil
 }
 
-func getCommonDicts(list []hcov1beta1.DataImportCronTemplateStatus, crDicts map[string]hcov1beta1.DataImportCronTemplate) []hcov1beta1.DataImportCronTemplateStatus {
+func getCommonDicts(list []hcov1beta1.DataImportCronTemplateStatus, crDicts map[string]hcov1beta1.DataImportCronTemplate, hc *hcov1beta1.HyperConverged) []hcov1beta1.DataImportCronTemplateStatus {
 	for dictName, commonDict := range dataImportCronTemplateHardCodedMap {
 		targetDict := hcov1beta1.DataImportCronTemplateStatus{
 			DataImportCronTemplate: *commonDict.DeepCopy(),
@@ -281,8 +288,12 @@ func getCommonDicts(list []hcov1beta1.DataImportCronTemplateStatus, crDicts map[
 				crDict.Spec.Schedule = targetDict.Spec.Schedule
 			}
 			targetDict.Spec = crDict.Spec.DeepCopy()
+			targetDict.ObjectMeta.Namespace = crDict.Namespace
 			targetDict.Status.Modified = true
+		} else if ns := hc.Spec.CommonBootImageNamespace; ns != nil && len(*ns) > 0 {
+			targetDict.ObjectMeta.Namespace = *ns
 		}
+
 		list = append(list, targetDict)
 	}
 

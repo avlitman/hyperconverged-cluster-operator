@@ -52,6 +52,7 @@ import (
 const (
 	defaultEventuallyTimeout         = 5 * time.Second
 	defaultEventuallyPollingInterval = 1 * time.Second
+	defaultKubevirtReadyTimeout      = 180 * time.Second
 )
 
 const HostPathBase = "/tmp/hostImages"
@@ -118,6 +119,7 @@ func BeforeTestSuiteSetup(_ []byte) {
 
 	// Wait for schedulable nodes
 	virtClient := kubevirt.Client()
+	initRunConfiguration(virtClient)
 	Eventually(func() int {
 		nodes := libnode.GetAllSchedulableNodes(virtClient)
 		if len(nodes.Items) > 0 {
@@ -135,6 +137,10 @@ func BeforeTestSuiteSetup(_ []byte) {
 }
 
 func EnsureKubevirtReady() {
+	EnsureKubevirtReadyWithTimeout(defaultKubevirtReadyTimeout)
+}
+
+func EnsureKubevirtReadyWithTimeout(timeout time.Duration) {
 	virtClient := kubevirt.Client()
 	kv := util.GetCurrentKv(virtClient)
 
@@ -146,7 +152,7 @@ func EnsureKubevirtReady() {
 		kv, err := virtClient.KubeVirt(kv.Namespace).Get(kv.Name, &metav1.GetOptions{})
 		Expect(err).ToNot(HaveOccurred())
 		return kv
-	}, 180*time.Second, 1*time.Second).Should(
+	}, timeout, 1*time.Second).Should(
 		SatisfyAll(
 			matcher.HaveConditionTrue(v1.KubeVirtConditionAvailable),
 			matcher.HaveConditionFalse(v1.KubeVirtConditionProgressing),

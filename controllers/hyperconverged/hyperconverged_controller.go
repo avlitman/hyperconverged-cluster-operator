@@ -8,7 +8,7 @@ import (
 	"reflect"
 
 	"github.com/blang/semver/v4"
-	jsonpatch "github.com/evanphx/json-patch"
+	jsonpatch "github.com/evanphx/json-patch/v5"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	openshiftconfigv1 "github.com/openshift/api/config/v1"
@@ -44,11 +44,13 @@ import (
 	"github.com/kubevirt/hyperconverged-cluster-operator/controllers/alerts"
 	"github.com/kubevirt/hyperconverged-cluster-operator/controllers/common"
 	"github.com/kubevirt/hyperconverged-cluster-operator/controllers/operands"
-	"github.com/kubevirt/hyperconverged-cluster-operator/pkg/metrics"
+	"github.com/kubevirt/hyperconverged-cluster-operator/pkg/monitoring/metrics"
 	hcoutil "github.com/kubevirt/hyperconverged-cluster-operator/pkg/util"
 	"github.com/kubevirt/hyperconverged-cluster-operator/version"
 	kubevirtcorev1 "kubevirt.io/api/core/v1"
+	aaqv1alpha1 "kubevirt.io/application-aware-quota/staging/src/kubevirt.io/application-aware-quota-api/pkg/apis/core/v1alpha1"
 	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
+	mtqv1alpha1 "kubevirt.io/managed-tenant-quota/staging/src/kubevirt.io/managed-tenant-quota-api/pkg/apis/core/v1alpha1"
 	sspv1beta2 "kubevirt.io/ssp-operator/api/v1beta2"
 )
 
@@ -60,8 +62,7 @@ var (
 const (
 	// We cannot set owner reference of cluster-wide resources to namespaced HyperConverged object. Therefore,
 	// use finalizers to manage the cleanup.
-	FinalizerName    = "kubevirt.io/hyperconverged"
-	badFinalizerName = "hyperconvergeds.hco.kubevirt.io"
+	FinalizerName = "kubevirt.io/hyperconverged"
 
 	// OpenshiftNamespace is for resources that belong in the openshift namespace
 
@@ -122,7 +123,7 @@ func newReconciler(mgr manager.Manager, ci hcoutil.ClusterInfo, upgradeableCond 
 		upgradeableCondition: upgradeableCond,
 	}
 
-	if ci.IsOpenshift() {
+	if ci.IsMonitoringAvailable() {
 		r.monitoringReconciler = alerts.NewMonitoringReconciler(ci, r.client, hcoutil.GetEventEmitter(), r.scheme)
 	}
 
@@ -179,18 +180,24 @@ func add(mgr manager.Manager, r reconcile.Reconciler, ci hcoutil.ClusterInfo) er
 		&kubevirtcorev1.KubeVirt{},
 		&cdiv1beta1.CDI{},
 		&networkaddonsv1.NetworkAddonsConfig{},
+		&mtqv1alpha1.MTQ{},
+		&aaqv1alpha1.AAQ{},
 		&schedulingv1.PriorityClass{},
 		&corev1.ConfigMap{},
 		&corev1.Service{},
 		&rbacv1.Role{},
 		&rbacv1.RoleBinding{},
 	}
+	if ci.IsMonitoringAvailable() {
+		secondaryResources = append(secondaryResources, []client.Object{
+			&monitoringv1.ServiceMonitor{},
+			&monitoringv1.PrometheusRule{},
+		}...)
+	}
 	if ci.IsOpenshift() {
 		secondaryResources = append(secondaryResources, []client.Object{
 			&sspv1beta2.SSP{},
 			&corev1.Service{},
-			&monitoringv1.ServiceMonitor{},
-			&monitoringv1.PrometheusRule{},
 			&routev1.Route{},
 			&consolev1.ConsoleCLIDownload{},
 			&consolev1.ConsoleQuickStart{},
@@ -537,18 +544,14 @@ func (r *ReconcileHyperConverged) getHyperConverged(req *common.HcoRequest) (*hc
 
 	// Green path first
 	if err == nil {
-		if metricErr := metrics.HcoMetrics.SetHCOMetricHyperConvergedExists(); metricErr != nil {
-			req.Logger.Error(metricErr, "failed to update the HyperConvergedCRExists metric")
-		}
+		metrics.SetHCOMetricHyperConvergedExists()
 		return instance, nil
 	}
 
 	// Error path
 	if apierrors.IsNotFound(err) {
 		req.Logger.Info("No HyperConverged resource")
-		if metricErr := metrics.HcoMetrics.SetHCOMetricHyperConvergedNotExists(); metricErr != nil {
-			req.Logger.Error(metricErr, "failed to update the HyperConvergedCRExists metric")
-		}
+		metrics.SetHCOMetricHyperConvergedNotExists()
 
 		// Request object not found, could have been deleted after reconcile request.
 		// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
@@ -710,14 +713,6 @@ func (r *ReconcileHyperConverged) ensureHcoDeleted(req *common.HcoRequest) (reco
 	finDropped := false
 	if hcoutil.ContainsString(req.Instance.ObjectMeta.Finalizers, FinalizerName) {
 		req.Instance.ObjectMeta.Finalizers, finDropped = drop(req.Instance.ObjectMeta.Finalizers, FinalizerName)
-		req.Dirty = true
-		requeue = requeue || finDropped
-	}
-
-	// should never happen - we are dropping the wrong finalizer in checkFinalizers, that always called before this
-	// function
-	if hcoutil.ContainsString(req.Instance.ObjectMeta.Finalizers, badFinalizerName) {
-		req.Instance.ObjectMeta.Finalizers, finDropped = drop(req.Instance.ObjectMeta.Finalizers, badFinalizerName)
 		req.Dirty = true
 		requeue = requeue || finDropped
 	}
@@ -1017,9 +1012,7 @@ func (r *ReconcileHyperConverged) updateConditions(req *common.HcoRequest) {
 		req.StatusDirty = true
 	}
 
-	if metricErr := metrics.HcoMetrics.SetHCOMetricSystemHealthStatus(getNumericalHealthStatus(systemHealthStatus)); metricErr != nil {
-		req.Logger.Error(metricErr, "failed to update the systemHealthStatus metric")
-	}
+	metrics.SetHCOMetricSystemHealthStatus(getNumericalHealthStatus(systemHealthStatus))
 }
 
 func (r *ReconcileHyperConverged) setLabels(req *common.HcoRequest) {
@@ -1046,10 +1039,7 @@ func (r *ReconcileHyperConverged) detectTaintedConfiguration(req *common.HcoRequ
 				tainted = true
 			}
 		}
-		err := metrics.HcoMetrics.SetUnsafeModificationCount(NumOfChanges, jpa)
-		if err != nil {
-			req.Logger.Error(err, "couldn't update 'UnsafeModification' metric")
-		}
+		metrics.SetUnsafeModificationCount(NumOfChanges, jpa)
 	}
 
 	if tainted {
@@ -1203,11 +1193,6 @@ func (r *ReconcileHyperConverged) migrateBeforeUpgrade(req *common.HcoRequest) (
 		return false, err
 	}
 
-	err = r.removeOldMetricsObjs(req)
-	if err != nil {
-		return false, err
-	}
-
 	removeOldQuickStartGuides(req, r.client, r.operandHandler.GetQuickStartNames())
 
 	return upgradePatched, nil
@@ -1266,10 +1251,16 @@ func (r *ReconcileHyperConverged) applyUpgradePatch(req *common.HcoRequest, hcoJ
 		return hcoJSON, err
 	}
 	if affectedRange(knownHcoSV) {
-		req.Logger.Info("applying upgrade patch", "knownHcoSV", knownHcoSV, "affectedRange", p.SemverRange, "patches", p.JSONPatch)
-		patchedBytes, err := p.JSONPatch.Apply(hcoJSON)
+		req.Logger.Info("applying upgrade patch", "knownHcoSV", knownHcoSV, "affectedRange", p.SemverRange, "patches", p.JSONPatch, "applyOptions", p.JSONPatchApplyOptions)
+		var patchedBytes []byte
+		if p.JSONPatchApplyOptions != nil {
+			patchedBytes, err = p.JSONPatch.ApplyWithOptions(hcoJSON, p.JSONPatchApplyOptions)
+		} else {
+			patchedBytes, err = p.JSONPatch.Apply(hcoJSON)
+		}
 		if err != nil {
-			if errors.Cause(err) == jsonpatch.ErrTestFailed {
+			// tolerate jsonpatch test failures
+			if errors.Is(err, jsonpatch.ErrTestFailed) {
 				return hcoJSON, nil
 			}
 
@@ -1305,56 +1296,6 @@ func (r *ReconcileHyperConverged) removeLeftover(req *common.HcoRequest, knownHc
 	return false, nil
 }
 
-var (
-	operatorMetrics = "hyperconverged-cluster-operator-metrics"
-	webhookMetrics  = "hyperconverged-cluster-webhook-metrics"
-
-	oldMetricsObjects map[string]client.Object
-)
-
-func initOldMetricsObjects(req *common.HcoRequest) {
-	if oldMetricsObjects == nil {
-		oldMetricsObjects = map[string]client.Object{
-			"operatorService": &corev1.Service{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      operatorMetrics,
-					Namespace: req.Namespace,
-				},
-			},
-			"webhookService": &corev1.Service{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      webhookMetrics,
-					Namespace: req.Namespace,
-				},
-			},
-			"operatorEndpoint": &corev1.Endpoints{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      operatorMetrics,
-					Namespace: req.Namespace,
-				},
-			},
-		}
-	}
-}
-
-func (r *ReconcileHyperConverged) removeOldMetricsObjs(req *common.HcoRequest) error {
-	initOldMetricsObjects(req)
-
-	for name, object := range oldMetricsObjects {
-		removed, err := r.deleteObj(req, object, false)
-
-		if err != nil {
-			return err
-		}
-
-		if removed {
-			delete(oldMetricsObjects, name)
-		}
-	}
-
-	return nil
-}
-
 func (r *ReconcileHyperConverged) deleteObj(req *common.HcoRequest, obj client.Object, protectNonHCOObjects bool) (bool, error) {
 	removed, err := hcoutil.EnsureDeleted(req.Ctx, r.client, obj, req.Instance.Name, req.Logger, false, false, protectNonHCOObjects)
 
@@ -1369,10 +1310,12 @@ func (r *ReconcileHyperConverged) deleteObj(req *common.HcoRequest, obj client.O
 		return removed, err
 	}
 
-	r.eventEmitter.EmitEvent(
-		req.Instance, corev1.EventTypeNormal, "Killing",
-		fmt.Sprintf("Removed %s %s", obj.GetName(), obj.GetObjectKind().GroupVersionKind().Kind),
-	)
+	if removed {
+		r.eventEmitter.EmitEvent(
+			req.Instance, corev1.EventTypeNormal, "Killing",
+			fmt.Sprintf("Removed %s %s", obj.GetName(), obj.GetObjectKind().GroupVersionKind().Kind),
+		)
+	}
 
 	return removed, nil
 }
@@ -1523,19 +1466,12 @@ func init() {
 }
 
 func checkFinalizers(req *common.HcoRequest) bool {
-	finDropped := false
-
-	if hcoutil.ContainsString(req.Instance.ObjectMeta.Finalizers, badFinalizerName) {
-		req.Logger.Info("removing a finalizer set in the past (without a fully qualified name)")
-		req.Instance.ObjectMeta.Finalizers, finDropped = drop(req.Instance.ObjectMeta.Finalizers, badFinalizerName)
-		req.Dirty = req.Dirty || finDropped
-	}
 	if req.Instance.ObjectMeta.DeletionTimestamp.IsZero() {
 		// Add the finalizer if it's not there
 		if !hcoutil.ContainsString(req.Instance.ObjectMeta.Finalizers, FinalizerName) {
 			req.Logger.Info("setting a finalizer (with fully qualified name)")
 			req.Instance.ObjectMeta.Finalizers = append(req.Instance.ObjectMeta.Finalizers, FinalizerName)
-			req.Dirty = req.Dirty || finDropped
+			req.Dirty = true
 		}
 		return true
 	}

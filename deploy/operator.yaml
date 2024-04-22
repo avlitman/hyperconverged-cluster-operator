@@ -5,7 +5,7 @@ metadata:
   labels:
     app.kubernetes.io/component: deployment
     app.kubernetes.io/part-of: hyperconverged-cluster
-    app.kubernetes.io/version: 1.10.0
+    app.kubernetes.io/version: 1.12.0
     name: hyperconverged-cluster-operator
   name: hyperconverged-cluster-operator
 spec:
@@ -20,7 +20,7 @@ spec:
       labels:
         app.kubernetes.io/component: deployment
         app.kubernetes.io/part-of: hyperconverged-cluster
-        app.kubernetes.io/version: 1.10.0
+        app.kubernetes.io/version: 1.12.0
         name: hyperconverged-cluster-operator
     spec:
       containers:
@@ -33,7 +33,7 @@ spec:
           value: OPERATOR
         - name: KVM_EMULATION
         - name: OPERATOR_IMAGE
-          value: quay.io/kubevirt/hyperconverged-cluster-operator:1.10.0-unstable
+          value: quay.io/kubevirt/hyperconverged-cluster-operator:1.12.0-unstable
         - name: OPERATOR_NAME
           value: hyperconverged-cluster-operator
         - name: OPERATOR_NAMESPACE
@@ -42,9 +42,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.name
-        - name: WATCH_NAMESPACE
         - name: VIRTIOWIN_CONTAINER
-          value: quay.io/kubevirt/virtio-container-disk@sha256:5b99c78ed831401048e72d72f9ec805710ee7625131fd9ad277b38ab1e67cfb9
+          value: quay.io/kubevirt/virtio-container-disk@sha256:f8e71a3a930ce95d646d80862d5ff6f9d3ed7ef2541dd2e2acec0bce26274734
         - name: SMBIOS
           value: |-
             Family: KubeVirt
@@ -52,20 +51,25 @@ spec:
             Product: None
         - name: MACHINETYPE
         - name: HCO_KV_IO_VERSION
-          value: 1.10.0
+          value: 1.12.0
         - name: KUBEVIRT_VERSION
-          value: v1.0.0-beta.0
+          value: v1.2.0
         - name: CDI_VERSION
-          value: v1.57.0-alpha1
+          value: v1.58.3
         - name: NETWORK_ADDONS_VERSION
-          value: v0.86.1
+          value: v0.91.0
         - name: SSP_VERSION
-          value: v0.18.1
+          value: v0.19.0
         - name: HPPO_VERSION
-          value: v0.16.0
+          value: v0.18.0
+        - name: MTQ_VERSION
+          value: v1.2.0
+        - name: AAQ_VERSION
+          value: v1.1.5
         - name: KV_CONSOLE_PLUGIN_IMAGE
-        image: quay.io/kubevirt/hyperconverged-cluster-operator:1.10.0-unstable
-        imagePullPolicy: IfNotPresent
+        - name: KV_CONSOLE_PROXY_IMAGE
+        image: quay.io/kubevirt/hyperconverged-cluster-operator:1.12.0-unstable
+        imagePullPolicy: Always
         livenessProbe:
           failureThreshold: 1
           httpGet:
@@ -105,7 +109,7 @@ metadata:
   labels:
     app.kubernetes.io/component: deployment
     app.kubernetes.io/part-of: hyperconverged-cluster
-    app.kubernetes.io/version: 1.10.0
+    app.kubernetes.io/version: 1.12.0
     name: hyperconverged-cluster-webhook
   name: hyperconverged-cluster-webhook
 spec:
@@ -120,7 +124,7 @@ spec:
       labels:
         app.kubernetes.io/component: deployment
         app.kubernetes.io/part-of: hyperconverged-cluster
-        app.kubernetes.io/version: 1.10.0
+        app.kubernetes.io/version: 1.12.0
         name: hyperconverged-cluster-webhook
     spec:
       containers:
@@ -132,7 +136,7 @@ spec:
         - name: APP
           value: WEBHOOK
         - name: OPERATOR_IMAGE
-          value: quay.io/kubevirt/hyperconverged-cluster-webhook:1.10.0-unstable
+          value: quay.io/kubevirt/hyperconverged-cluster-webhook:1.12.0-unstable
         - name: OPERATOR_NAME
           value: hyperconverged-cluster-webhook
         - name: OPERATOR_NAMESPACE
@@ -141,9 +145,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.name
-        - name: WATCH_NAMESPACE
-        image: quay.io/kubevirt/hyperconverged-cluster-webhook:1.10.0-unstable
-        imagePullPolicy: IfNotPresent
+        image: quay.io/kubevirt/hyperconverged-cluster-webhook:1.12.0-unstable
+        imagePullPolicy: Always
         livenessProbe:
           failureThreshold: 1
           httpGet:
@@ -196,7 +199,7 @@ metadata:
   labels:
     app.kubernetes.io/component: deployment
     app.kubernetes.io/part-of: hyperconverged-cluster
-    app.kubernetes.io/version: 1.10.0
+    app.kubernetes.io/version: 1.12.0
     name: hyperconverged-cluster-cli-download
   name: hyperconverged-cluster-cli-download
 spec:
@@ -211,12 +214,12 @@ spec:
       labels:
         app.kubernetes.io/component: deployment
         app.kubernetes.io/part-of: hyperconverged-cluster
-        app.kubernetes.io/version: 1.10.0
+        app.kubernetes.io/version: 1.12.0
         name: hyperconverged-cluster-cli-download
     spec:
       containers:
-      - image: quay.io/kubevirt/virt-artifacts-server:1.10.0-unstable
-        imagePullPolicy: IfNotPresent
+      - image: quay.io/kubevirt/virt-artifacts-server:1.12.0-unstable
+        imagePullPolicy: Always
         name: server
         ports:
         - containerPort: 8080
@@ -242,7 +245,7 @@ metadata:
   labels:
     app.kubernetes.io/component: network
     app.kubernetes.io/part-of: hyperconverged-cluster
-    app.kubernetes.io/version: 1.10.0
+    app.kubernetes.io/version: 1.12.0
     name: cluster-network-addons-operator
   name: cluster-network-addons-operator
 spec:
@@ -260,7 +263,7 @@ spec:
       labels:
         app.kubernetes.io/component: network
         app.kubernetes.io/part-of: hyperconverged-cluster
-        app.kubernetes.io/version: 1.10.0
+        app.kubernetes.io/version: 1.12.0
         name: cluster-network-addons-operator
         prometheus.cnao.io: "true"
     spec:
@@ -269,29 +272,29 @@ spec:
         - name: MULTUS_IMAGE
           value: ghcr.io/k8snetworkplumbingwg/multus-cni@sha256:3fbcc32bd4e4d15bd93c96def784a229cd84cca27942bf4858b581f31c97ee02
         - name: MULTUS_DYNAMIC_NETWORKS_CONTROLLER_IMAGE
-          value: ghcr.io/k8snetworkplumbingwg/multus-dynamic-networks-controller@sha256:dee1979d92f0a31598a6e3569ac7004be7d29e7ca9e31db23753ef263110dc04
+          value: ghcr.io/k8snetworkplumbingwg/multus-dynamic-networks-controller@sha256:57573a24923e5588bca6bc337a8b2b08406c5b77583974365d2cf063c0dd5d06
         - name: LINUX_BRIDGE_IMAGE
-          value: quay.io/kubevirt/cni-default-plugins@sha256:406b43253fb5d45f50d1543879353822e3f746e2794b65ab30754e800386b76d
+          value: quay.io/kubevirt/cni-default-plugins@sha256:c884d6d08f8c0db98964f1eb3877b44ade41fa106083802a9914775df17d5291
         - name: LINUX_BRIDGE_MARKER_IMAGE
-          value: quay.io/kubevirt/bridge-marker@sha256:5d24c6d1ecb0556896b7b81c7e5260b54173858425777b7a84df8a706c07e6d2
+          value: quay.io/kubevirt/bridge-marker@sha256:bba066e3b5ff3fb8c5e20861fe8abe51e3c9b50ad6ce3b2616af9cb5479a06d0
         - name: OVS_CNI_IMAGE
-          value: quay.io/kubevirt/ovs-cni-plugin@sha256:5f7290e2294255ab2547c3b4bf48cc2d75531ec5a43e600366e9b2719bef983f
+          value: quay.io/kubevirt/ovs-cni-plugin@sha256:e16ac74343da21abb8fb668ce71e728053d00503a992dae2164b9e94a280113e
         - name: KUBEMACPOOL_IMAGE
-          value: quay.io/kubevirt/kubemacpool@sha256:afba7d0c4a95d2d4924f6ee6ef16bbe59117877383819057f01809150829cb0c
+          value: quay.io/kubevirt/kubemacpool@sha256:cf8daa57ae6603b776d3af512331b143fa03bc2f4b72f28420fddcf5e4156d0a
         - name: MACVTAP_CNI_IMAGE
-          value: quay.io/kubevirt/macvtap-cni@sha256:434420511e09b2b5ede785a2c9062b6658ffbc26fbdd4629ce06110f9039c600
+          value: quay.io/kubevirt/macvtap-cni@sha256:850b89343ace7c7ea6b18dd8e11964613974e9d1f7377af03854d407fb15230a
         - name: KUBE_RBAC_PROXY_IMAGE
-          value: quay.io/openshift/origin-kube-rbac-proxy@sha256:baedb268ac66456018fb30af395bb3d69af5fff3252ff5d549f0231b1ebb6901
+          value: quay.io/openshift/origin-kube-rbac-proxy@sha256:e2def4213ec0657e72eb790ae8a115511d5b8f164a62d3568d2f1bff189917e8
         - name: KUBE_SECONDARY_DNS_IMAGE
-          value: ghcr.io/kubevirt/kubesecondarydns@sha256:77132adb5f840ceb0aadd408731a5c8b01a4b427a78084ab5e4e9b961195cb02
+          value: ghcr.io/kubevirt/kubesecondarydns@sha256:e87e829380a1e576384145f78ccaa885ba1d5690d5de7d0b73d40cfb804ea24d
         - name: CORE_DNS_IMAGE
           value: registry.k8s.io/coredns/coredns@sha256:a0ead06651cf580044aeb0a0feba63591858fb2e43ade8c9dea45a6a89ae7e5e
         - name: OPERATOR_IMAGE
-          value: quay.io/kubevirt/cluster-network-addons-operator@sha256:8c4d25ba44c1584a377773a1e2c17f90417774aa45333786dbc7117e2de3c758
+          value: quay.io/kubevirt/cluster-network-addons-operator@sha256:bf17da674ed6dac95aa4fd7637173fd4e026ebb4523b66f529c0eff394a25bcc
         - name: OPERATOR_NAME
           value: cluster-network-addons-operator
         - name: OPERATOR_VERSION
-          value: v0.86.1
+          value: v0.91.0
         - name: OPERATOR_NAMESPACE
           valueFrom:
             fieldRef:
@@ -311,7 +314,7 @@ spec:
           value: prometheus-k8s
         - name: RUNBOOK_URL_TEMPLATE
           value: https://kubevirt.io/monitoring/runbooks/
-        image: quay.io/kubevirt/cluster-network-addons-operator@sha256:8c4d25ba44c1584a377773a1e2c17f90417774aa45333786dbc7117e2de3c758
+        image: quay.io/kubevirt/cluster-network-addons-operator@sha256:bf17da674ed6dac95aa4fd7637173fd4e026ebb4523b66f529c0eff394a25bcc
         imagePullPolicy: IfNotPresent
         name: cluster-network-addons-operator
         resources:
@@ -327,7 +330,7 @@ spec:
         - --logtostderr
         - --secure-listen-address=:8443
         - --upstream=http://127.0.0.1:8080
-        image: quay.io/openshift/origin-kube-rbac-proxy@sha256:baedb268ac66456018fb30af395bb3d69af5fff3252ff5d549f0231b1ebb6901
+        image: quay.io/openshift/origin-kube-rbac-proxy@sha256:e2def4213ec0657e72eb790ae8a115511d5b8f164a62d3568d2f1bff189917e8
         imagePullPolicy: IfNotPresent
         name: kube-rbac-proxy
         ports:
@@ -357,7 +360,7 @@ metadata:
   labels:
     app.kubernetes.io/component: compute
     app.kubernetes.io/part-of: hyperconverged-cluster
-    app.kubernetes.io/version: 1.10.0
+    app.kubernetes.io/version: 1.12.0
     name: virt-operator
   name: virt-operator
 spec:
@@ -372,7 +375,7 @@ spec:
       labels:
         app.kubernetes.io/component: compute
         app.kubernetes.io/part-of: hyperconverged-cluster
-        app.kubernetes.io/version: 1.10.0
+        app.kubernetes.io/version: 1.12.0
         kubevirt.io: virt-operator
         name: virt-operator
         prometheus.kubevirt.io: "true"
@@ -400,28 +403,28 @@ spec:
         - virt-operator
         env:
         - name: VIRT_OPERATOR_IMAGE
-          value: quay.io/kubevirt/virt-operator@sha256:c2e4d01f0d30cc61f30471bc75c1412936ca996db619a7eb87188a6fa4b7a781
+          value: quay.io/kubevirt/virt-operator@sha256:d90ccf31c9b675f70b5a88f23e622ef7bb08b675669a2741261bea2e0d394c74
         - name: WATCH_NAMESPACE
           valueFrom:
             fieldRef:
               fieldPath: metadata.annotations['olm.targetNamespaces']
         - name: VIRT_API_IMAGE
-          value: quay.io/kubevirt/virt-api@sha256:13c8b96a8e1ac89b53fe721bc4d4696adf7f097063e4c7b03aed772890d7291f
+          value: quay.io/kubevirt/virt-api@sha256:1ff99e166f3d485b02d2b476591053fbb078a0423b2750c4763fa940d12df0b2
         - name: VIRT_CONTROLLER_IMAGE
-          value: quay.io/kubevirt/virt-controller@sha256:e8cf4a193e7f0764c87e5981d96883c8637efeaa925ac1df5e3b26fe644c8ebe
+          value: quay.io/kubevirt/virt-controller@sha256:34c512504852b55d0733ffa0771746e7caa8506f8dfc52bd83edb8823f37b573
         - name: VIRT_HANDLER_IMAGE
-          value: quay.io/kubevirt/virt-handler@sha256:9ee6e0fe5b320ed6893337f0f87a96f5aef80d77bf20fdcc2cb0528507626c39
+          value: quay.io/kubevirt/virt-handler@sha256:68fd4802f8d3fb25bbce322d82db742f2e9a1701347d15fe622228881db270b3
         - name: VIRT_LAUNCHER_IMAGE
-          value: quay.io/kubevirt/virt-launcher@sha256:d6e1029c24591361c3e0e2e8bef6f0f930807a905142cf2d258b12a6c7dd3971
+          value: quay.io/kubevirt/virt-launcher@sha256:8ce76808f551d633dc9674e3c5e33eb026858e1a5b90fcca2741037fffc22d28
         - name: VIRT_EXPORTPROXY_IMAGE
-          value: quay.io/kubevirt/virt-exportproxy@sha256:48d242a74aa684fd026e5e7dfafc1e7dd87822c259dcfbc084a8c21506056aa6
+          value: quay.io/kubevirt/virt-exportproxy@sha256:5d6edcbe23825fcb6c7d5c6323f2ba7bcf71d3f0cecc5fff1ed106aabfde280e
         - name: VIRT_EXPORTSERVER_IMAGE
-          value: quay.io/kubevirt/virt-exportserver@sha256:7f5ced4b2aac91da332eb0fdfa90ebb2bcc89d125afbbf78ebcb1bda445e4345
+          value: quay.io/kubevirt/virt-exportserver@sha256:f9cd1dbb87ec0b691a7de914a1a893b9818b55f586c71c4d82136eb99557ea29
         - name: GS_IMAGE
-          value: quay.io/kubevirt/libguestfs-tools@sha256:453942a0aa4ab29a2fdb016a55a16d8a754a0d4e4ae7df930e3f0dceaec8207f
+          value: quay.io/kubevirt/libguestfs-tools@sha256:b6b51f509aa7aedd77908d7c0355c518a9c9ba7428afbcdf05ab44ee63f39188
         - name: KUBEVIRT_VERSION
-          value: v1.0.0-beta.0
-        image: quay.io/kubevirt/virt-operator@sha256:c2e4d01f0d30cc61f30471bc75c1412936ca996db619a7eb87188a6fa4b7a781
+          value: v1.2.0
+        image: quay.io/kubevirt/virt-operator@sha256:d90ccf31c9b675f70b5a88f23e622ef7bb08b675669a2741261bea2e0d394c74
         imagePullPolicy: IfNotPresent
         name: virt-operator
         ports:
@@ -480,7 +483,7 @@ metadata:
   labels:
     app.kubernetes.io/component: schedule
     app.kubernetes.io/part-of: hyperconverged-cluster
-    app.kubernetes.io/version: 1.10.0
+    app.kubernetes.io/version: 1.12.0
     name: ssp-operator
   name: ssp-operator
 spec:
@@ -496,7 +499,7 @@ spec:
       labels:
         app.kubernetes.io/component: schedule
         app.kubernetes.io/part-of: hyperconverged-cluster
-        app.kubernetes.io/version: 1.10.0
+        app.kubernetes.io/version: 1.12.0
         control-plane: ssp-operator
         name: ssp-operator
         prometheus.ssp.kubevirt.io: "true"
@@ -508,13 +511,14 @@ spec:
         - /manager
         env:
         - name: VALIDATOR_IMAGE
-          value: quay.io/kubevirt/kubevirt-template-validator:v0.18.1
-        - name: VIRT_LAUNCHER_IMAGE
+          value: quay.io/kubevirt/kubevirt-template-validator@sha256:f6db539fe4d4b752644c6bc8a308f5a80ae09a71da5c5d535114dc4c3cf18e0a
+        - name: VIRTIO_IMG
         - name: OPERATOR_VERSION
-          value: v0.18.1
+          value: v0.19.0
         - name: TEKTON_TASKS_IMAGE
         - name: TEKTON_TASKS_DISK_VIRT_IMAGE
-        image: quay.io/kubevirt/ssp-operator@sha256:697ed1da5d29497a5cc2f22ab4ee54b16b06baff6fd6f4c9c36a85466a50da56
+        - name: VM_CONSOLE_PROXY_IMAGE
+        image: quay.io/kubevirt/ssp-operator@sha256:d57ef05fea09c4690dbe728ebe6a39d9df1a3574dfa7d18346bf3fe66afed702
         livenessProbe:
           httpGet:
             path: /healthz
@@ -571,7 +575,7 @@ metadata:
   labels:
     app.kubernetes.io/component: storage
     app.kubernetes.io/part-of: hyperconverged-cluster
-    app.kubernetes.io/version: 1.10.0
+    app.kubernetes.io/version: 1.12.0
     name: cdi-operator
   name: cdi-operator
 spec:
@@ -586,7 +590,7 @@ spec:
       labels:
         app.kubernetes.io/component: storage
         app.kubernetes.io/part-of: hyperconverged-cluster
-        app.kubernetes.io/version: 1.10.0
+        app.kubernetes.io/version: 1.12.0
         name: cdi-operator
         operator.cdi.kubevirt.io: ""
         prometheus.cdi.kubevirt.io: "true"
@@ -596,25 +600,25 @@ spec:
         - name: DEPLOY_CLUSTER_RESOURCES
           value: "true"
         - name: OPERATOR_VERSION
-          value: v1.57.0-alpha1
+          value: v1.58.3
         - name: CONTROLLER_IMAGE
-          value: quay.io/kubevirt/cdi-controller@sha256:d781c1d3ba5c93f55a7384673ad2fc2fb727826474cccc7e341001299c41e8e0
+          value: quay.io/kubevirt/cdi-controller@sha256:6aea91b795e4b60f963ef74e4f2eda4d08eb89772c8caa15e77b2a81940bcd10
         - name: IMPORTER_IMAGE
-          value: quay.io/kubevirt/cdi-importer@sha256:589fd7df9d4124801440d9792f81501bc579c3c074629969dca08a3f819e32cc
+          value: quay.io/kubevirt/cdi-importer@sha256:f5005a344533fd2d1ac84ee13357e5f9fa291dc5b8ae3467956c72547ad19071
         - name: CLONER_IMAGE
-          value: quay.io/kubevirt/cdi-cloner@sha256:8d709963ab41e49968d20143113daf2bcc242183b74abf15863c579aaadd9375
+          value: quay.io/kubevirt/cdi-cloner@sha256:df1502ad04fb910715c2f7ab822abd1fd167ad63ccc45e32343ce5c06c329722
         - name: APISERVER_IMAGE
-          value: quay.io/kubevirt/cdi-apiserver@sha256:3b6a41b7f2205a07ab661d31746ad81c912d96704a3be3a2a0e7c0604ec1c3c0
+          value: quay.io/kubevirt/cdi-apiserver@sha256:699ecd04e9c16490f920daba4e6bee4f148ab323c24d07ac554272a9694c8c6f
         - name: UPLOAD_SERVER_IMAGE
-          value: quay.io/kubevirt/cdi-uploadserver@sha256:90fa8fa849fb3f7e726e5825b03594054d37f90e981564275e5e17f2230b40e7
+          value: quay.io/kubevirt/cdi-uploadserver@sha256:d9c84bef695700f674ca5526a17fe337d6d2d3a046a9c1fb7e7ff23e6d29adc7
         - name: UPLOAD_PROXY_IMAGE
-          value: quay.io/kubevirt/cdi-uploadproxy@sha256:5faf4be67e6b3c16ef8ef8f1a4f243bf176b0947ff47f961ac88b2d19e797441
+          value: quay.io/kubevirt/cdi-uploadproxy@sha256:78f49c4858cbe685d596cffdfebbc62e4a581d3369b419622d1d25d4dbb00469
         - name: VERBOSITY
           value: "1"
         - name: PULL_POLICY
           value: IfNotPresent
         - name: MONITORING_NAMESPACE
-        image: quay.io/kubevirt/cdi-operator@sha256:55eff87db6f1705a89fa3d9c9e2d4f77cabdbd3e7b67d5b8bf537435d379173d
+        image: quay.io/kubevirt/cdi-operator@sha256:f76a486f1b7c8f53ab5e009bfa0374c102767e58e875fceccd787368a09ae442
         imagePullPolicy: IfNotPresent
         name: cdi-operator
         ports:
@@ -623,7 +627,7 @@ spec:
           protocol: TCP
         resources:
           requests:
-            cpu: 10m
+            cpu: 100m
             memory: 150Mi
         securityContext:
           allowPrivilegeEscalation: false
@@ -649,7 +653,7 @@ metadata:
   labels:
     app.kubernetes.io/component: storage
     app.kubernetes.io/part-of: hyperconverged-cluster
-    app.kubernetes.io/version: 1.10.0
+    app.kubernetes.io/version: 1.12.0
     name: hostpath-provisioner-operator
   name: hostpath-provisioner-operator
 spec:
@@ -664,7 +668,7 @@ spec:
       labels:
         app.kubernetes.io/component: storage
         app.kubernetes.io/part-of: hyperconverged-cluster
-        app.kubernetes.io/version: 1.10.0
+        app.kubernetes.io/version: 1.12.0
         name: hostpath-provisioner-operator
         operator.hostpath-provisioner.kubevirt.io: ""
         prometheus.hostpathprovisioner.kubevirt.io: "true"
@@ -692,25 +696,25 @@ spec:
         - name: OPERATOR_NAME
           value: hostpath-provisioner-operator
         - name: OPERATOR_IMAGE
-          value: quay.io/kubevirt/hostpath-provisioner-operator@sha256:e6c1a6f9d3bf1678e7802bbdd238e8f3a4311682e517ae4c543aea49faf1b126
+          value: quay.io/kubevirt/hostpath-provisioner-operator@sha256:dd2948ca8e62d17eafba40bdcaad8367a97f092fd3b8d9849b2d62aec3152a72
         - name: PROVISIONER_IMAGE
-          value: quay.io/kubevirt/hostpath-provisioner@sha256:9e102da286b3a262d413c3784c20e028ade7a2cda6cb1884aeeb43bfb6a06d7b
+          value: quay.io/kubevirt/hostpath-provisioner@sha256:adb1d33e95e8991dc47107926172469b5ecbeace509391ce021ca42d305a41d3
         - name: CSI_PROVISIONER_IMAGE
-          value: quay.io/kubevirt/hostpath-csi-driver@sha256:c4c57725f677e0413e5b2c1b1e8e2dd473dd7f1d88cdaf76106708056ef3a78d
+          value: quay.io/kubevirt/hostpath-csi-driver@sha256:8d84b9a33e0ec3749aece7c5f9879d1e0d248e8028ab3f776528a044d387033c
         - name: NODE_DRIVER_REG_IMAGE
-          value: k8s.gcr.io/sig-storage/csi-node-driver-registrar@sha256:2dee3fe5fe861bb66c3a4ac51114f3447a4cd35870e0f2e2b558c7a400d89589
+          value: registry.k8s.io/sig-storage/csi-node-driver-registrar@sha256:c53535af8a7f7e3164609838c4b191b42b2d81238d75c1b2a2b582ada62a9780
         - name: LIVENESS_PROBE_IMAGE
-          value: k8s.gcr.io/sig-storage/livenessprobe@sha256:1b7c978a792a8fa4e96244e8059bd71bb49b07e2e5a897fb0c867bdc6db20d5d
+          value: registry.k8s.io/sig-storage/livenessprobe@sha256:5baeb4a6d7d517434292758928bb33efc6397368cbb48c8a4cf29496abf4e987
         - name: CSI_SNAPSHOT_IMAGE
-          value: k8s.gcr.io/sig-storage/csi-snapshotter@sha256:818f35653f2e214db81d655063e81995de9073328a3430498624c140881026a3
+          value: registry.k8s.io/sig-storage/csi-snapshotter@sha256:1a29ab1e4ecdc33a84062cec757620d9787c28b28793202c5b78ae097c3dee27
         - name: CSI_SIG_STORAGE_PROVISIONER_IMAGE
-          value: k8s.gcr.io/sig-storage/csi-provisioner@sha256:4e74c0492bceddc598de1c90cc5bc14dcda94cb49fa9c5bad9d117c4834b5e08
+          value: registry.k8s.io/sig-storage/csi-provisioner@sha256:d078dc174323407e8cc6f0f9abd4efaac5db27838f1564d0253d5e3233e3f17f
         - name: VERBOSITY
           value: "1"
         - name: MONITORING_NAMESPACE
         - name: PRIORITY_CLASS
           value: kubevirt-cluster-critical
-        image: quay.io/kubevirt/hostpath-provisioner-operator@sha256:e6c1a6f9d3bf1678e7802bbdd238e8f3a4311682e517ae4c543aea49faf1b126
+        image: quay.io/kubevirt/hostpath-provisioner-operator@sha256:dd2948ca8e62d17eafba40bdcaad8367a97f092fd3b8d9849b2d62aec3152a72
         imagePullPolicy: IfNotPresent
         livenessProbe:
           failureThreshold: 1
@@ -760,6 +764,154 @@ spec:
           - key: tls.key
             path: tls.key
           secretName: hostpath-provisioner-operator-webhook-service-cert
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/component: multi-tenant
+    app.kubernetes.io/part-of: hyperconverged-cluster
+    app.kubernetes.io/version: 1.12.0
+    name: mtq-operator
+  name: mtq-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: mtq-operator
+      operator.mtq.kubevirt.io: ""
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: multi-tenant
+        app.kubernetes.io/part-of: hyperconverged-cluster
+        app.kubernetes.io/version: 1.12.0
+        name: mtq-operator
+        operator.mtq.kubevirt.io: ""
+        prometheus.mtq.kubevirt.io: "true"
+    spec:
+      containers:
+      - args:
+        - -v=1
+        env:
+        - name: DEPLOY_CLUSTER_RESOURCES
+          value: "true"
+        - name: OPERATOR_VERSION
+          value: v1.2.0
+        - name: CONTROLLER_IMAGE
+          value: quay.io/kubevirt/mtq-controller@sha256:ae7dd07e4018c63414b021eba34aa4776a6c7d6ff4fcdf9fd2d7ca30aae98a29
+        - name: MTQ_LOCK_SERVER_IMAGE
+          value: quay.io/kubevirt/mtq-lock-server@sha256:8e686107dd9990dab1a3d90ee1068541938f673bf54ea9e1308b2ed7218546b0
+        - name: VERBOSITY
+          value: "1"
+        - name: PULL_POLICY
+          value: IfNotPresent
+        - name: MONITORING_NAMESPACE
+        image: quay.io/kubevirt/mtq-operator@sha256:90c7608b0ba085582a65ccdc11d089049c5e6b0438d018dd9dc76eb3490383c7
+        imagePullPolicy: IfNotPresent
+        name: mtq-operator
+        ports:
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 10m
+            memory: 150Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      nodeSelector:
+        kubernetes.io/os: linux
+      priorityClassName: kubevirt-cluster-critical
+      securityContext:
+        runAsNonRoot: true
+      serviceAccountName: mtq-operator
+      tolerations:
+      - key: CriticalAddonsOnly
+        operator: Exists
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/component: quota-management
+    app.kubernetes.io/part-of: hyperconverged-cluster
+    app.kubernetes.io/version: 1.12.0
+    name: aaq-operator
+  name: aaq-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: aaq-operator
+      operator.aaq.kubevirt.io: ""
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: quota-management
+        app.kubernetes.io/part-of: hyperconverged-cluster
+        app.kubernetes.io/version: 1.12.0
+        name: aaq-operator
+        operator.aaq.kubevirt.io: ""
+        prometheus.aaq.kubevirt.io: "true"
+    spec:
+      containers:
+      - args:
+        - -v=1
+        env:
+        - name: DEPLOY_CLUSTER_RESOURCES
+          value: "true"
+        - name: OPERATOR_VERSION
+          value: v1.1.5
+        - name: CONTROLLER_IMAGE
+          value: quay.io/kubevirt/aaq-controller@sha256:cb2fa52ae3f6a1a99b2de77b58c5db54c43ba8ee86c6540b4844c901180ce611
+        - name: AAQ_SERVER_IMAGE
+          value: quay.io/kubevirt/aaq-server@sha256:0c6b01c48030e03e99b3ff2b319658c2bf2b2001f4e3e030ba70d1143b25717a
+        - name: VERBOSITY
+          value: "1"
+        - name: PULL_POLICY
+          value: IfNotPresent
+        - name: MONITORING_NAMESPACE
+        image: quay.io/kubevirt/aaq-operator@sha256:590d24742401eeff3fb6a9c8ed977c63442f8f0a0505509fae69aa1bf8aa84ae
+        imagePullPolicy: IfNotPresent
+        name: aaq-operator
+        ports:
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 10m
+            memory: 150Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      nodeSelector:
+        kubernetes.io/os: linux
+      priorityClassName: kubevirt-cluster-critical
+      securityContext:
+        runAsNonRoot: true
+      serviceAccountName: aaq-operator
+      tolerations:
+      - key: CriticalAddonsOnly
+        operator: Exists
 ---
 apiVersion: v1
 kind: Service

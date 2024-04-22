@@ -11,11 +11,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/kubevirt/hyperconverged-cluster-operator/controllers/common"
-	"github.com/kubevirt/hyperconverged-cluster-operator/pkg/metrics"
+	"github.com/kubevirt/hyperconverged-cluster-operator/pkg/monitoring/metrics"
 	hcoutil "github.com/kubevirt/hyperconverged-cluster-operator/pkg/util"
 )
 
@@ -36,16 +37,23 @@ type MonitoringReconciler struct {
 	eventEmitter  hcoutil.EventEmitter
 }
 
+var logger = logf.Log.WithName("hyperconverged-operator-monitoring-reconciler")
+
 func NewMonitoringReconciler(ci hcoutil.ClusterInfo, cl client.Client, ee hcoutil.EventEmitter, scheme *runtime.Scheme) *MonitoringReconciler {
 	deployment := ci.GetDeployment()
 	namespace := deployment.Namespace
 	owner := getDeploymentReference(deployment)
 
+	alertRuleReconciler, err := newAlertRuleReconciler(namespace, owner)
+	if err != nil {
+		logger.Error(err, "failed to create the 'PrometheusRule' reconciler")
+	}
+
 	return &MonitoringReconciler{
 		reconcilers: []MetricReconciler{
-			newAlertRuleReconciler(namespace, owner),
+			alertRuleReconciler,
 			newRoleReconciler(namespace, owner),
-			newRoleBindingReconciler(namespace, owner),
+			newRoleBindingReconciler(namespace, owner, ci),
 			newMetricServiceReconciler(namespace, owner),
 			newServiceMonitorReconciler(namespace, owner),
 		},
@@ -115,27 +123,25 @@ func (r *MonitoringReconciler) ReconcileOneResource(req *common.HcoRequest, reco
 	resource, updated, err := reconciler.UpdateExistingResource(req.Ctx, r.client, existing, req.Logger)
 	if err != nil {
 		r.eventEmitter.EmitEvent(nil, corev1.EventTypeWarning, "UnexpectedError", fmt.Sprintf("failed to update the %s %s", reconciler.ResourceName(), reconciler.Kind()))
-	} else if updated {
-		err = r.handleUpdatedResource(req, reconciler, firstLoop)
+		return nil, err
 	}
 
-	return resource, err
+	if updated {
+		r.handleUpdatedResource(req, reconciler, firstLoop)
+	}
+
+	return resource, nil
 }
 
-func (r *MonitoringReconciler) handleUpdatedResource(req *common.HcoRequest, reconciler MetricReconciler, firstLoop bool) error {
+func (r *MonitoringReconciler) handleUpdatedResource(req *common.HcoRequest, reconciler MetricReconciler, firstLoop bool) {
 	if req.HCOTriggered {
 		r.eventEmitter.EmitEvent(nil, corev1.EventTypeNormal, "Updated", fmt.Sprintf("Updated %s %s", reconciler.Kind(), reconciler.ResourceName()))
 	} else {
 		r.eventEmitter.EmitEvent(nil, corev1.EventTypeWarning, "Overwritten", fmt.Sprintf("Overwritten %s %s", reconciler.Kind(), reconciler.ResourceName()))
 		if !firstLoop && !req.UpgradeMode {
-			err := metrics.HcoMetrics.IncOverwrittenModifications(reconciler.Kind(), reconciler.ResourceName())
-			if err != nil {
-				req.Logger.Error(err, "couldn't update 'OverwrittenModifications' metric")
-				return err
-			}
+			metrics.IncOverwrittenModifications(reconciler.Kind(), reconciler.ResourceName())
 		}
 	}
-	return nil
 }
 
 func (r *MonitoringReconciler) UpdateRelatedObjects(req *common.HcoRequest) error {
@@ -166,8 +172,8 @@ func getDeploymentReference(deployment *appsv1.Deployment) metav1.OwnerReference
 		Kind:               "Deployment",
 		Name:               deployment.GetName(),
 		UID:                deployment.GetUID(),
-		BlockOwnerDeletion: pointer.Bool(false),
-		Controller:         pointer.Bool(false),
+		BlockOwnerDeletion: ptr.To(false),
+		Controller:         ptr.To(false),
 	}
 }
 
@@ -175,11 +181,11 @@ func getDeploymentReference(deployment *appsv1.Deployment) metav1.OwnerReference
 // return true if something was changed
 func updateCommonDetails(required, existing *metav1.ObjectMeta) bool {
 	if reflect.DeepEqual(required.OwnerReferences, existing.OwnerReferences) &&
-		reflect.DeepEqual(required.Labels, existing.Labels) {
+		hcoutil.CompareLabels(required, existing) {
 		return false
 	}
 
-	hcoutil.DeepCopyLabels(required, existing)
+	hcoutil.MergeLabels(required, existing)
 	if reqLen := len(required.OwnerReferences); reqLen > 0 {
 		refs := make([]metav1.OwnerReference, reqLen)
 		for i, ref := range required.OwnerReferences {

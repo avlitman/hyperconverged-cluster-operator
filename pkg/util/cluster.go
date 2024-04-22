@@ -5,20 +5,22 @@ import (
 	"errors"
 	"os"
 
-	csvv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
-	appsv1 "k8s.io/api/apps/v1"
-	"k8s.io/client-go/discovery"
-
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
-
 	"github.com/go-logr/logr"
 	openshiftconfigv1 "github.com/openshift/api/config/v1"
+	csvv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
+	"k8s.io/client-go/discovery"
+	"k8s.io/utils/net"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/kubevirt/hyperconverged-cluster-operator/pkg/monitoring/metrics"
 )
 
 type ClusterInfo interface {
@@ -31,6 +33,8 @@ type ClusterInfo interface {
 	IsControlPlaneHighlyAvailable() bool
 	IsInfrastructureHighlyAvailable() bool
 	IsConsolePluginImageProvided() bool
+	IsMonitoringAvailable() bool
+	IsSingleStackIPv6() bool
 	GetTLSSecurityProfile(hcoTLSSecurityProfile *openshiftconfigv1.TLSSecurityProfile) *openshiftconfigv1.TLSSecurityProfile
 	RefreshAPIServerCR(ctx context.Context, c client.Client) error
 	GetPod() *corev1.Pod
@@ -45,6 +49,8 @@ type ClusterInfoImp struct {
 	controlPlaneHighlyAvailable   bool
 	infrastructureHighlyAvailable bool
 	consolePluginImageProvided    bool
+	monitoringAvailable           bool
+	singlestackipv6               bool
 	domain                        string
 	baseDomain                    string
 	ownResources                  *OwnResources
@@ -80,9 +86,15 @@ func (c *ClusterInfoImp) Init(ctx context.Context, cl client.Client, logger logr
 	if err != nil {
 		return err
 	}
+	if c.runningInOpenshift && c.singlestackipv6 {
+		metrics.SetHCOMetricSingleStackIPv6True()
+	}
 
-	varValue, varExists := os.LookupEnv(KVUIPluginImageEnvV)
-	c.consolePluginImageProvided = varExists && len(varValue) > 0
+	uiPluginVarValue, uiPluginVarExists := os.LookupEnv(KVUIPluginImageEnvV)
+	uiProxyVarValue, uiProxyVarExists := os.LookupEnv(KVUIProxyImageEnvV)
+	c.consolePluginImageProvided = uiPluginVarExists && len(uiPluginVarValue) > 0 && uiProxyVarExists && len(uiProxyVarValue) > 0
+
+	c.monitoringAvailable = isPrometheusExists(ctx, cl)
 
 	err = c.RefreshAPIServerCR(ctx, cl)
 	if err != nil {
@@ -142,6 +154,24 @@ func (c *ClusterInfoImp) initOpenshift(ctx context.Context, cl client.Client) er
 
 	c.controlPlaneHighlyAvailable = clusterInfrastructure.Status.ControlPlaneTopology == openshiftconfigv1.HighlyAvailableTopologyMode
 	c.infrastructureHighlyAvailable = clusterInfrastructure.Status.InfrastructureTopology == openshiftconfigv1.HighlyAvailableTopologyMode
+
+	clusterNetwork := &openshiftconfigv1.Network{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+	}
+	err = cl.Get(ctx, client.ObjectKeyFromObject(clusterNetwork), clusterNetwork)
+	if err != nil {
+		return err
+	}
+	cn := clusterNetwork.Status.ClusterNetwork
+	for _, i := range cn {
+		c.logger.Info("Cluster Network",
+			"CIDR", i.CIDR,
+			"Host Prefix", i.HostPrefix,
+		)
+	}
+	c.singlestackipv6 = len(cn) == 1 && net.IsIPv6CIDRString(cn[0].CIDR)
 	return nil
 }
 
@@ -157,8 +187,16 @@ func (c *ClusterInfoImp) IsConsolePluginImageProvided() bool {
 	return c.consolePluginImageProvided
 }
 
+func (c *ClusterInfoImp) IsMonitoringAvailable() bool {
+	return c.monitoringAvailable
+}
+
 func (c *ClusterInfoImp) IsRunningLocally() bool {
 	return c.runningLocally
+}
+
+func (c *ClusterInfoImp) IsSingleStackIPv6() bool {
+	return c.singlestackipv6
 }
 
 func (c *ClusterInfoImp) IsControlPlaneHighlyAvailable() bool {
@@ -212,6 +250,20 @@ func getClusterBaseDomain(ctx context.Context, cl client.Client) (string, error)
 		return "", err
 	}
 	return clusterDNS.Spec.BaseDomain, nil
+}
+
+func isPrometheusExists(ctx context.Context, cl client.Client) bool {
+	prometheusRuleCRDExists := isCRDExists(ctx, cl, PrometheusRuleCRDName)
+	serviceMonitorCRDExists := isCRDExists(ctx, cl, ServiceMonitorCRDName)
+
+	return prometheusRuleCRDExists && serviceMonitorCRDExists
+}
+
+func isCRDExists(ctx context.Context, cl client.Client, crdName string) bool {
+	found := &apiextensionsv1.CustomResourceDefinition{}
+	key := client.ObjectKey{Name: crdName}
+	err := cl.Get(ctx, key, found)
+	return err == nil
 }
 
 func init() {

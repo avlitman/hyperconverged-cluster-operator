@@ -30,10 +30,11 @@ import (
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/utils/pointer"
 
 	v1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/log"
+
+	"kubevirt.io/kubevirt/pkg/pointer"
 )
 
 const (
@@ -158,7 +159,7 @@ func (c *ClusterConfig) crdUpdated(_, cur interface{}) {
 func defaultClusterConfig(cpuArch string) *v1.KubeVirtConfiguration {
 	parallelOutboundMigrationsPerNodeDefault := ParallelOutboundMigrationsPerNodeDefault
 	parallelMigrationsPerClusterDefault := ParallelMigrationsPerClusterDefault
-	bandwithPerMigrationDefault := resource.MustParse(BandwithPerMigrationDefault)
+	bandwidthPerMigrationDefault := resource.MustParse(BandwidthPerMigrationDefault)
 	nodeDrainTaintDefaultKey := NodeDrainTaintDefaultKey
 	allowAutoConverge := MigrationAllowAutoConverge
 	allowPostCopy := MigrationAllowPostCopy
@@ -175,10 +176,11 @@ func defaultClusterConfig(cpuArch string) *v1.KubeVirtConfiguration {
 		Product:      SmbiosConfigDefaultProduct,
 	}
 	supportedQEMUGuestAgentVersions := strings.Split(strings.TrimRight(SupportedGuestAgentVersions, ","), ",")
-	DefaultOVMFPath, DefaultMachineType, emulatedMachinesDefault := getCPUArchSpecificDefault(cpuArch)
+	DefaultOVMFPath, _, emulatedMachinesDefault := getCPUArchSpecificDefault(cpuArch)
 	defaultDiskVerification := &v1.DiskVerification{
 		MemoryLimit: resource.NewScaledQuantity(DefaultDiskVerificationMemoryLimitMBytes, resource.Mega),
 	}
+	defaultEvictionStrategy := v1.EvictionStrategyNone
 
 	return &v1.KubeVirtConfiguration{
 		ImagePullPolicy: DefaultImagePullPolicy,
@@ -198,24 +200,24 @@ func defaultClusterConfig(cpuArch string) *v1.KubeVirtConfiguration {
 				VirtLauncher:   DefaultVirtLauncherLogVerbosity,
 			},
 		},
+		EvictionStrategy: &defaultEvictionStrategy,
 		MigrationConfiguration: &v1.MigrationConfiguration{
 			ParallelMigrationsPerCluster:      &parallelMigrationsPerClusterDefault,
 			ParallelOutboundMigrationsPerNode: &parallelOutboundMigrationsPerNodeDefault,
 			NodeDrainTaintKey:                 &nodeDrainTaintDefaultKey,
-			BandwidthPerMigration:             &bandwithPerMigrationDefault,
+			BandwidthPerMigration:             &bandwidthPerMigrationDefault,
 			ProgressTimeout:                   &progressTimeout,
 			CompletionTimeoutPerGiB:           &completionTimeoutPerGiB,
 			UnsafeMigrationOverride:           &defaultUnsafeMigrationOverride,
 			AllowAutoConverge:                 &allowAutoConverge,
 			AllowPostCopy:                     &allowPostCopy,
 		},
-		MachineType:      DefaultMachineType,
 		CPURequest:       &cpuRequestDefault,
 		EmulatedMachines: emulatedMachinesDefault,
 		NetworkConfiguration: &v1.NetworkConfiguration{
 			NetworkInterface:                  defaultNetworkInterface,
-			PermitSlirpInterface:              pointer.BoolPtr(DefaultPermitSlirpInterface),
-			PermitBridgeInterfaceOnPodNetwork: pointer.BoolPtr(DefaultPermitBridgeInterfaceOnPodNetwork),
+			PermitSlirpInterface:              pointer.P(DefaultPermitSlirpInterface),
+			PermitBridgeInterfaceOnPodNetwork: pointer.P(DefaultPermitBridgeInterfaceOnPodNetwork),
 		},
 		SMBIOSConfig:                SmbiosDefaultConfig,
 		SELinuxLauncherType:         DefaultSELinuxLauncherType,
@@ -264,6 +266,10 @@ func defaultClusterConfig(cpuArch string) *v1.KubeVirtConfiguration {
 			},
 			DefaultArchitecture: runtime.GOARCH,
 		},
+		LiveUpdateConfiguration: &v1.LiveUpdateConfiguration{
+			MaxHotplugRatio: DefaultMaxHotplugRatio,
+		},
+		VMRolloutStrategy: pointer.P(DefaultVMRolloutStrategy),
 	}
 }
 

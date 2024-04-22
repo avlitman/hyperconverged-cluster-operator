@@ -13,7 +13,7 @@ jobs:
       QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
       QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
       REGISTRY_NAMESPACE: kubevirt
-      OPM_VERSION: v1.26.2
+      OPM_VERSION: v1.35.0
     steps:
       - name: resolve the correct branch of the tag
         run: |
@@ -30,11 +30,11 @@ jobs:
           echo "TARGET_BRANCH=${TARGET_BRANCH}" >> $GITHUB_ENV
           echo "TAGGED_VERSION=${TAGGED_VERSION}" >> $GITHUB_ENV
       - name: Setup Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.19'
+          go-version: '1.21'
       - name: Checkout the latest code of ${{ env.TARGET_BRANCH }} branch
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.TARGET_BRANCH }}
           fetch-depth: 2
@@ -64,15 +64,17 @@ jobs:
         run: |
           export HCO_OPERATOR_IMAGE=$(tools/digester/digester --image="quay.io/kubevirt/hyperconverged-cluster-operator:${CSV_VERSION}")
           export HCO_WEBHOOK_IMAGE=$(tools/digester/digester --image="quay.io/kubevirt/hyperconverged-cluster-webhook:${CSV_VERSION}")
+          export HCO_DOWNLOADS_IMAGE=$(tools/digester/digester --image="quay.io/kubevirt/virt-artifacts-server:${CSV_VERSION}")
           ./hack/build-manifests.sh
           sed -i "/^ \+replaces:/d" ${PACKAGE_DIR}/${CSV_VERSION}/manifests/kubevirt-hyperconverged-operator.v${CSV_VERSION}.clusterserviceversion.yaml
       - name: Get opm client
         run: |
-          wget https://github.com/operator-framework/operator-registry/releases/download/${OPM_VERSION}/linux-amd64-opm
-          chmod +x linux-amd64-opm
+          mkdir -p _out
+          wget "https://github.com/operator-framework/operator-registry/releases/download/${OPM_VERSION}/linux-amd64-opm" -O _out/opm
+          chmod +x _out/opm
       - name: Build and Push the Index Image
         run: |
-          export OPM=$(pwd)/linux-amd64-opm
+          export OPM=$(pwd)/_out/opm
           ./hack/build-index-image.sh ${{ env.CSV_VERSION }}
       - name: Run Publisher script
         run: |
@@ -80,3 +82,58 @@ jobs:
           export TARGET_BRANCH=${{ env.TARGET_BRANCH }}
           export HCO_BOT_TOKEN=${{ secrets.HCO_BOT_TOKEN }}
           curl https://raw.githubusercontent.com/kubevirt/hyperconverged-cluster-operator/main/automation/publisher/publisher.sh | bash
+
+      - name: get next version
+        env:
+          CSV_VERSION: ${{ env.CSV_VERSION }}
+        run: |
+          NEW_VERSION=$(./hack/get-next-version.sh "${CSV_VERSION}")
+          NEW_IMAGE_TAG="${NEW_VERSION}-unstable"
+          echo "NEW_VERSION=${NEW_VERSION}" >> $GITHUB_ENV
+          echo "NEW_IMAGE_TAG=${NEW_IMAGE_TAG}" >> $GITHUB_ENV
+
+      - name: Build Applications next version Images
+        env:
+          NEW_IMAGE_TAG: ${{ env.NEW_IMAGE_TAG }}
+        run: |
+          IMAGE_TAG=${NEW_IMAGE_TAG} make container-build
+      - name: Push next version Application Images
+        env:
+          NEW_IMAGE_TAG: ${{ env.NEW_IMAGE_TAG }}
+        run: |
+          IMAGE_TAG=${NEW_IMAGE_TAG} make container-push
+      - name: run manifest for next version
+        env:
+          PACKAGE_DIR: ${{ env.PACKAGE_DIR }}
+          CSV_VERSION: ${{ env.NEW_VERSION }}
+        run: |
+          mkdir -p "${PACKAGE_DIR}/${CSV_VERSION}"
+          ./hack/build-manifests.sh
+          VERSION_4_SED=$(echo "${CSV_VERSION}" | sed -E "s|\.|\\\\\\\\\\\.|g")
+          sed -i -E "s|(ARG VERSION=).*|\1${CSV_VERSION}|g" deploy/index-image/bundle.Dockerfile
+          sed -i -E "s|(ARG INITIAL_VERSION=).*|\1${CSV_VERSION}|g;s|(ARG INITIAL_VERSION_SED=).*|\1\"${VERSION_4_SED}\"|g" deploy/index-image/Dockerfile.bundle.ci-index-image-upgrade
+          sed -i -E "s|(ARG VERSION=).*|\1${CSV_VERSION}|g" deploy/olm-catalog/bundle.Dockerfile
+          sed -i -E "s|(ARG INITIAL_VERSION=).*|\1${CSV_VERSION}|g;s|(ARG INITIAL_VERSION_SED=).*|\1\"${VERSION_4_SED}\"|g" deploy/olm-catalog/Dockerfile.bundle.ci-index-image-upgrade
+          sed -i -E "s|(quay.io/kubevirt/hyperconverged-cluster-bundle:).*|\1${CSV_VERSION}|g" deploy/olm-catalog/community-kubevirt-hyperconverged/index-template-release.yaml
+          sed -i -E "s|(quay.io/kubevirt/hyperconverged-cluster-bundle:).*|\1${CSV_VERSION}|g" deploy/olm-catalog/community-kubevirt-hyperconverged/index-template-unstable.yaml
+          git add ./deploy/
+          echo "CHANGED=true" >> $GITHUB_ENV
+
+      - uses: peter-evans/create-pull-request@v6
+        if: ${{ env.CHANGED }}
+        with:
+          token: ${{ secrets.HCO_BOT_TOKEN }}
+          commit-message: |
+            Prepare version ${{ env.NEW_VERSION }}
+            Signed-off-by: HCO Bump Bot <noreply@github.com>
+          committer: HCO Bump Bot <noreply@github.com>
+          title: "Prepare version ${{ env.NEW_VERSION }}"
+          body: |
+            Prepare version ${{ env.NEW_VERSION }}
+            Executed by HCO Release-Bumper Bot.
+            ```release-note
+            Prepare version ${{ env.NEW_VERSION }}
+            ```
+          assignees: tiraboschi,orenc1,nunnatsa,machadovilaca,dharmit
+          reviewers: tiraboschi,orenc1,nunnatsa,machadovilaca,dharmit
+          branch: prepare_version_${{ env.NEW_VERSION }}

@@ -3,40 +3,38 @@ package validator
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"testing"
 	"time"
 
-	openshiftconfigv1 "github.com/openshift/api/config/v1"
-
-	admissionv1 "k8s.io/api/admission/v1"
-	"k8s.io/apimachinery/pkg/runtime/serializer"
-	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/types"
+	openshiftconfigv1 "github.com/openshift/api/config/v1"
+	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	networkaddonsv1 "github.com/kubevirt/cluster-network-addons-operator/pkg/apis/networkaddonsoperator/v1"
+	kubevirtcorev1 "kubevirt.io/api/core/v1"
+	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
+	sdkapi "kubevirt.io/controller-lifecycle-operator-sdk/api"
+	sspv1beta2 "kubevirt.io/ssp-operator/api/v1beta2"
+
 	"github.com/kubevirt/hyperconverged-cluster-operator/api/v1beta1"
 	"github.com/kubevirt/hyperconverged-cluster-operator/controllers/common"
 	"github.com/kubevirt/hyperconverged-cluster-operator/controllers/commontestutils"
 	"github.com/kubevirt/hyperconverged-cluster-operator/controllers/operands"
 	"github.com/kubevirt/hyperconverged-cluster-operator/pkg/util"
-	kubevirtcorev1 "kubevirt.io/api/core/v1"
-	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
-	sdkapi "kubevirt.io/controller-lifecycle-operator-sdk/api"
-	sspv1beta2 "kubevirt.io/ssp-operator/api/v1beta2"
 )
 
 const (
@@ -291,7 +289,7 @@ var _ = Describe("webhooks validator", func() {
 						Template: cdiv1beta1.DataVolume{
 							Spec: cdiv1beta1.DataVolumeSpec{
 								Source: &cdiv1beta1.DataVolumeSource{
-									Registry: &cdiv1beta1.DataVolumeSourceRegistry{URL: pointer.String("docker://someregistry/image1")},
+									Registry: &cdiv1beta1.DataVolumeSourceRegistry{URL: ptr.To("docker://someregistry/image1")},
 								},
 							},
 						},
@@ -306,7 +304,7 @@ var _ = Describe("webhooks validator", func() {
 						Template: cdiv1beta1.DataVolume{
 							Spec: cdiv1beta1.DataVolumeSpec{
 								Source: &cdiv1beta1.DataVolumeSource{
-									Registry: &cdiv1beta1.DataVolumeSourceRegistry{URL: pointer.String("docker://someregistry/image2")},
+									Registry: &cdiv1beta1.DataVolumeSourceRegistry{URL: ptr.To("docker://someregistry/image2")},
 								},
 							},
 						},
@@ -321,7 +319,7 @@ var _ = Describe("webhooks validator", func() {
 						Template: cdiv1beta1.DataVolume{
 							Spec: cdiv1beta1.DataVolumeSpec{
 								Source: &cdiv1beta1.DataVolumeSource{
-									Registry: &cdiv1beta1.DataVolumeSourceRegistry{URL: pointer.String("docker://someregistry/image3")},
+									Registry: &cdiv1beta1.DataVolumeSourceRegistry{URL: ptr.To("docker://someregistry/image3")},
 								},
 							},
 						},
@@ -336,7 +334,7 @@ var _ = Describe("webhooks validator", func() {
 						Template: cdiv1beta1.DataVolume{
 							Spec: cdiv1beta1.DataVolumeSpec{
 								Source: &cdiv1beta1.DataVolumeSource{
-									Registry: &cdiv1beta1.DataVolumeSourceRegistry{URL: pointer.String("docker://someregistry/image4")},
+									Registry: &cdiv1beta1.DataVolumeSourceRegistry{URL: ptr.To("docker://someregistry/image4")},
 								},
 							},
 						},
@@ -447,15 +445,46 @@ var _ = Describe("webhooks validator", func() {
 			)
 
 			It("should fail if does not have any of the HTTP/2-required ciphers", func() {
-				Expect(
-					updateTLSSecurityProfile(openshiftconfigv1.VersionTLS12, []string{"DHE-RSA-AES256-GCM-SHA384", "DHE-RSA-CHACHA20-POLY1305"}),
-				).ToNot(Succeed())
+				err := updateTLSSecurityProfile(openshiftconfigv1.VersionTLS12, []string{"DHE-RSA-AES256-GCM-SHA384", "DHE-RSA-CHACHA20-POLY1305"})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("http2: TLSConfig.CipherSuites is missing an HTTP/2-required AES_128_GCM_SHA256 cipher (need at least one of ECDHE-RSA-AES128-GCM-SHA256 or ECDHE-ECDSA-AES128-GCM-SHA256)"))
 			})
 
 			It("should succeed if does not have any of the HTTP/2-required ciphers but TLS version >= 1.3", func() {
 				Expect(
-					updateTLSSecurityProfile(openshiftconfigv1.VersionTLS13, []string{"DHE-RSA-AES256-GCM-SHA384", "DHE-RSA-CHACHA20-POLY1305"}),
+					updateTLSSecurityProfile(openshiftconfigv1.VersionTLS13, []string{}),
 				).To(Succeed())
+			})
+
+			It("should fail if does have custom ciphers with TLS version >= 1.3", func() {
+				err := updateTLSSecurityProfile(openshiftconfigv1.VersionTLS13, []string{"TLS_AES_128_GCM_SHA256", "TLS_CHACHA20_POLY1305_SHA256"})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("custom ciphers cannot be selected when minTLSVersion is VersionTLS13"))
+			})
+
+			It("should fail when minTLSVersion is invalid", func() {
+				err := updateTLSSecurityProfile("invalidProtocolVersion", []string{"TLS_AES_128_GCM_SHA256", "TLS_CHACHA20_POLY1305_SHA256"})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("invalid value for spec.tlsSecurityProfile.custom.minTLSVersion"))
+			})
+		})
+
+		Context("validate feature gates", func() {
+			var getClusterInfo func() util.ClusterInfo
+			BeforeEach(func() {
+				getClusterInfo = util.GetClusterInfo
+			})
+
+			AfterEach(func() {
+				util.GetClusterInfo = getClusterInfo
+			})
+
+			It("should reject request with EnableManagedTenantQuota=true on SNO", func() {
+				util.GetClusterInfo = func() util.ClusterInfo {
+					return commontestutils.ClusterInfoSNOMock{}
+				}
+				cr.Spec.FeatureGates.EnableManagedTenantQuota = ptr.To(true)
+				Expect(wh.ValidateCreate(ctx, dryRun, cr)).ToNot(Succeed())
 			})
 		})
 	})
@@ -527,9 +556,8 @@ var _ = Describe("webhooks validator", func() {
 			newHco.Spec.Infra.NodePlacement.NodeSelector["key3"] = "value3"
 
 			err := wh.ValidateUpdate(ctx, dryRun, newHco, hco)
-			Expect(err).To(HaveOccurred())
-			Expect(apierrors.IsNotFound(err)).To(BeTrue())
-			Expect(err.Error()).Should(ContainSubstring("kubevirts.kubevirt.io"))
+			Expect(err).To(MatchError(apierrors.IsNotFound, "not found error"))
+			Expect(err).To(MatchError(ContainSubstring("kubevirts.kubevirt.io")))
 		})
 
 		It("should return error if dry-run update of KV CR returns error", func() {
@@ -544,8 +572,7 @@ var _ = Describe("webhooks validator", func() {
 			newHco.Spec.Workloads.NodePlacement.NodeSelector["a change"] = "Something else"
 
 			err := wh.ValidateUpdate(ctx, dryRun, newHco, hco)
-			Expect(err).To(HaveOccurred())
-			Expect(err).Should(Equal(ErrFakeKvError))
+			Expect(err).To(MatchError(ErrFakeKvError))
 		})
 
 		It("should return error if CDI CR is missing", func() {
@@ -563,9 +590,8 @@ var _ = Describe("webhooks validator", func() {
 			newHco.Spec.Infra.NodePlacement.NodeSelector["key3"] = "value3"
 
 			err = wh.ValidateUpdate(ctx, dryRun, newHco, hco)
-			Expect(err).To(HaveOccurred())
-			Expect(apierrors.IsNotFound(err)).To(BeTrue())
-			Expect(err.Error()).Should(ContainSubstring("cdis.cdi.kubevirt.io"))
+			Expect(err).To(MatchError(apierrors.IsNotFound, "not found error"))
+			Expect(err).To(MatchError(ContainSubstring("cdis.cdi.kubevirt.io")))
 		})
 
 		It("should return error if dry-run update of CDI CR returns error", func() {
@@ -579,8 +605,7 @@ var _ = Describe("webhooks validator", func() {
 			newHco.Spec.Workloads.NodePlacement.NodeSelector["a change"] = "Something else"
 
 			err := wh.ValidateUpdate(ctx, dryRun, newHco, hco)
-			Expect(err).To(HaveOccurred())
-			Expect(err).Should(Equal(ErrFakeCdiError))
+			Expect(err).To(MatchError(ErrFakeCdiError))
 		})
 
 		It("should not return error if dry-run update of ALL CR passes", func() {
@@ -611,9 +636,8 @@ var _ = Describe("webhooks validator", func() {
 			newHco.Spec.Infra.NodePlacement.NodeSelector["key3"] = "value3"
 
 			err = wh.ValidateUpdate(ctx, dryRun, newHco, hco)
-			Expect(err).To(HaveOccurred())
-			Expect(apierrors.IsNotFound(err)).To(BeTrue())
-			Expect(err.Error()).Should(ContainSubstring("networkaddonsconfigs.networkaddonsoperator.network.kubevirt.io"))
+			Expect(err).To(MatchError(apierrors.IsNotFound, "not found error"))
+			Expect(err).To(MatchError(ContainSubstring("networkaddonsconfigs.networkaddonsoperator.network.kubevirt.io")))
 		})
 
 		It("should return error if dry-run update of NetworkAddons CR returns error", func() {
@@ -628,8 +652,7 @@ var _ = Describe("webhooks validator", func() {
 			newHco.Spec.Workloads.NodePlacement.NodeSelector["a change"] = "Something else"
 
 			err := wh.ValidateUpdate(ctx, dryRun, newHco, hco)
-			Expect(err).To(HaveOccurred())
-			Expect(err).Should(Equal(ErrFakeNetworkError))
+			Expect(err).To(MatchError(ErrFakeNetworkError))
 		})
 
 		It("should return error if SSP CR is missing", func() {
@@ -645,9 +668,8 @@ var _ = Describe("webhooks validator", func() {
 			newHco.Spec.Infra.NodePlacement.NodeSelector["key3"] = "value3"
 
 			err := wh.ValidateUpdate(ctx, dryRun, newHco, hco)
-			Expect(err).To(HaveOccurred())
-			Expect(apierrors.IsNotFound(err)).To(BeTrue())
-			Expect(err.Error()).Should(ContainSubstring("ssps.ssp.kubevirt.io"))
+			Expect(err).To(MatchError(apierrors.IsNotFound, "not found error"))
+			Expect(err).To(MatchError(ContainSubstring("ssps.ssp.kubevirt.io")))
 		})
 
 		It("should return error if dry-run update of SSP CR returns error", func() {
@@ -661,8 +683,7 @@ var _ = Describe("webhooks validator", func() {
 			newHco.Spec.Workloads.NodePlacement.NodeSelector["a change"] = "Something else"
 
 			err := wh.ValidateUpdate(ctx, dryRun, newHco, hco)
-			Expect(err).To(HaveOccurred())
-			Expect(err).Should(Equal(ErrFakeSspError))
+			Expect(err).To(MatchError(ErrFakeSspError))
 
 		})
 
@@ -678,8 +699,7 @@ var _ = Describe("webhooks validator", func() {
 			newHco.Spec.Workloads.NodePlacement.NodeSelector["a change"] = "Something else"
 
 			err := wh.ValidateUpdate(ctx, dryRun, newHco, hco)
-			Expect(err).To(HaveOccurred())
-			Expect(err).Should(Equal(context.DeadlineExceeded))
+			Expect(err).To(MatchError(context.DeadlineExceeded))
 		})
 
 		It("should not return error if nothing was changed", func() {
@@ -764,9 +784,9 @@ var _ = Describe("webhooks validator", func() {
 					NodePlacement: newHyperConvergedConfig(),
 				}
 
-				err = wh.ValidateUpdate(ctx, dryRun, newHco, hco)
-				Expect(err).To(HaveOccurred())
-				Expect(apierrors.IsNotFound(err)).To(BeTrue())
+				Expect(
+					wh.ValidateUpdate(ctx, dryRun, newHco, hco),
+				).To(MatchError(apierrors.IsNotFound, "not found error"))
 			})
 		})
 
@@ -804,8 +824,7 @@ var _ = Describe("webhooks validator", func() {
 				hco.DeepCopyInto(newHco)
 
 				// change something in the LiveMigrationConfig field
-				newVal := int64(200)
-				hco.Spec.LiveMigrationConfig.CompletionTimeoutPerGiB = &newVal
+				hco.Spec.LiveMigrationConfig.CompletionTimeoutPerGiB = ptr.To[int64](200)
 
 				Expect(wh.ValidateUpdate(ctx, dryRun, newHco, hco)).To(Succeed())
 			})
@@ -819,12 +838,11 @@ var _ = Describe("webhooks validator", func() {
 				hco.DeepCopyInto(newHco)
 
 				// change something in the LiveMigrationConfig field
-				wrongVal := "Wrong Value"
-				newHco.Spec.LiveMigrationConfig.BandwidthPerMigration = &wrongVal
+				newHco.Spec.LiveMigrationConfig.BandwidthPerMigration = ptr.To("Wrong Value")
 
-				err := wh.ValidateUpdate(ctx, dryRun, newHco, hco)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).Should(ContainSubstring("failed to parse the LiveMigrationConfig.bandwidthPerMigration field"))
+				Expect(
+					wh.ValidateUpdate(ctx, dryRun, newHco, hco),
+				).To(MatchError(ContainSubstring("failed to parse the LiveMigrationConfig.bandwidthPerMigration field")))
 			})
 		})
 
@@ -877,8 +895,7 @@ var _ = Describe("webhooks validator", func() {
 					wh := NewWebhookHandler(logger, cli, decoder, HcoValidNamespace, true, nil)
 
 					err := wh.ValidateUpdate(ctx, dryRun, &newHco, hco)
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).Should(ContainSubstring(errorMsg))
+					Expect(err).To(MatchError(ContainSubstring(errorMsg)))
 				},
 				Entry("certConfig.ca.duration is too short",
 					v1beta1.HyperConverged{
@@ -1062,15 +1079,46 @@ var _ = Describe("webhooks validator", func() {
 			)
 
 			It("should fail if does not have any of the HTTP/2-required ciphers", func() {
-				Expect(
-					updateTLSSecurityProfile(openshiftconfigv1.VersionTLS12, []string{"DHE-RSA-AES256-GCM-SHA384", "DHE-RSA-CHACHA20-POLY1305"}),
-				).ToNot(Succeed())
+				err := updateTLSSecurityProfile(openshiftconfigv1.VersionTLS12, []string{"DHE-RSA-AES256-GCM-SHA384", "DHE-RSA-CHACHA20-POLY1305"})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("http2: TLSConfig.CipherSuites is missing an HTTP/2-required AES_128_GCM_SHA256 cipher (need at least one of ECDHE-RSA-AES128-GCM-SHA256 or ECDHE-ECDSA-AES128-GCM-SHA256)"))
 			})
 
 			It("should succeed if does not have any of the HTTP/2-required ciphers but TLS version >= 1.3", func() {
 				Expect(
-					updateTLSSecurityProfile(openshiftconfigv1.VersionTLS13, []string{"DHE-RSA-AES256-GCM-SHA384", "DHE-RSA-CHACHA20-POLY1305"}),
+					updateTLSSecurityProfile(openshiftconfigv1.VersionTLS13, []string{}),
 				).To(Succeed())
+			})
+
+			It("should fail if does have custom ciphers with TLS version >= 1.3", func() {
+				err := updateTLSSecurityProfile(openshiftconfigv1.VersionTLS13, []string{"TLS_AES_128_GCM_SHA256", "TLS_CHACHA20_POLY1305_SHA256"})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("custom ciphers cannot be selected when minTLSVersion is VersionTLS13"))
+			})
+
+			It("should fail when minTLSVersion is invalid", func() {
+				err := updateTLSSecurityProfile("invalidProtocolVersion", []string{"TLS_AES_128_GCM_SHA256", "TLS_CHACHA20_POLY1305_SHA256"})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("invalid value for spec.tlsSecurityProfile.custom.minTLSVersion"))
+			})
+		})
+
+		Context("validate feature gates", func() {
+			var getClusterInfo func() util.ClusterInfo
+			BeforeEach(func() {
+				getClusterInfo = util.GetClusterInfo
+			})
+
+			AfterEach(func() {
+				util.GetClusterInfo = getClusterInfo
+			})
+
+			It("should reject request with EnableManagedTenantQuota=true on SNO", func() {
+				util.GetClusterInfo = func() util.ClusterInfo {
+					return commontestutils.ClusterInfoSNOMock{}
+				}
+				hco.Spec.FeatureGates.EnableManagedTenantQuota = ptr.To(true)
+				Expect(wh.ValidateCreate(ctx, dryRun, hco)).ToNot(Succeed())
 			})
 		})
 	})
@@ -1150,8 +1198,7 @@ var _ = Describe("webhooks validator", func() {
 			})
 
 			err := wh.ValidateDelete(ctx, dryRun, hco)
-			Expect(err).To(HaveOccurred())
-			Expect(err).Should(Equal(ErrFakeKvError))
+			Expect(err).To(MatchError(ErrFakeKvError))
 		})
 
 		It("should reject if CDI deletion fails", func() {
@@ -1170,8 +1217,7 @@ var _ = Describe("webhooks validator", func() {
 			})
 
 			err := wh.ValidateDelete(ctx, dryRun, hco)
-			Expect(err).To(HaveOccurred())
-			Expect(err).Should(Equal(ErrFakeCdiError))
+			Expect(err).To(MatchError(ErrFakeCdiError))
 		})
 
 		It("should ignore if KV does not exist", func() {
@@ -1199,8 +1245,7 @@ var _ = Describe("webhooks validator", func() {
 			})
 
 			err := wh.ValidateDelete(ctx, dryRun, hco)
-			Expect(err).To(HaveOccurred())
-			Expect(err).Should(Equal(ErrFakeKvError))
+			Expect(err).To(MatchError(ErrFakeKvError))
 		})
 
 		It("should ignore if CDI does not exist", func() {
@@ -1228,8 +1273,7 @@ var _ = Describe("webhooks validator", func() {
 			})
 
 			err := wh.ValidateDelete(ctx, dryRun, hco)
-			Expect(err).To(HaveOccurred())
-			Expect(err).Should(Equal(ErrFakeCdiError))
+			Expect(err).To(MatchError(ErrFakeCdiError))
 		})
 	})
 
@@ -1265,20 +1309,13 @@ var _ = Describe("webhooks validator", func() {
 				cli := getFakeClient(hco)
 				cli.InitiateUpdateErrors(initiateTimeout)
 
-				dryRun := false
-				ctx := context.TODO()
-
 				wh := NewWebhookHandler(logger, cli, decoder, HcoValidNamespace, true, nil)
 
 				newHco := &v1beta1.HyperConverged{}
 				hco.DeepCopyInto(newHco)
 				newHco.Annotations = map[string]string{annotationName: annotation}
 
-				err := wh.ValidateUpdate(ctx, dryRun, newHco, hco)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("invalid jsonPatch in the %s", annotationName))
-				fmt.Fprintf(GinkgoWriter, "Expected error: %v\n", err)
-
+				Expect(wh.ValidateUpdate(context.TODO(), false, newHco, hco)).To(MatchError(ContainSubstring("invalid jsonPatch in the %s", annotationName)))
 			},
 			Entry("should reject if kv annotation is invalid", common.JSONPatchKVAnnotationName, invalidKvAnnotation),
 			Entry("should reject if cdi annotation is invalid", common.JSONPatchCDIAnnotationName, invalidCdiAnnotation),
@@ -1378,8 +1415,7 @@ var _ = Describe("webhooks validator", func() {
 				newCr.Spec.TLSSecurityProfile = &oldTLSSecurityProfile
 
 				err := wh.ValidateUpdate(ctx, false, newCr, cr)
-				Expect(err).To(HaveOccurred())
-				Expect(err).Should(Equal(ErrFakeCdiError))
+				Expect(err).To(MatchError(ErrFakeCdiError))
 				Expect(hcoTLSConfigCache).To(Equal(&initialTLSSecurityProfile))
 			})
 
@@ -1423,8 +1459,7 @@ var _ = Describe("webhooks validator", func() {
 				})
 
 				err := wh.ValidateDelete(ctx, false, cr)
-				Expect(err).To(HaveOccurred())
-				Expect(err).Should(Equal(ErrFakeKvError))
+				Expect(err).To(MatchError(ErrFakeKvError))
 				Expect(hcoTLSConfigCache).To(Equal(&modernTLSSecurityProfile))
 			})
 
@@ -1486,8 +1521,20 @@ var _ = Describe("webhooks validator", func() {
 						BaseDomain: commontestutils.BaseDomain,
 					},
 				}
+				ipv4network := &openshiftconfigv1.Network{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "cluster",
+					},
+					Status: openshiftconfigv1.NetworkStatus{
+						ClusterNetwork: []openshiftconfigv1.ClusterNetworkEntry{
+							{
+								CIDR: "10.128.0.0/14",
+							},
+						},
+					},
+				}
 
-				resources := []client.Object{clusterVersion, infrastructure, ingress, apiServer, namespace, dns}
+				resources := []client.Object{clusterVersion, infrastructure, ingress, apiServer, namespace, dns, ipv4network}
 				cl = commontestutils.InitClient(resources)
 			})
 
@@ -1501,7 +1548,7 @@ var _ = Describe("webhooks validator", func() {
 					Expect(ci.IsOpenshift()).To(BeTrue())
 
 					_, minTypedTLSVersion := SelectCipherSuitesAndMinTLSVersion()
-					Expect(minTypedTLSVersion).Should(Equal(initExpected))
+					Expect(minTypedTLSVersion).To(Equal(initExpected))
 
 					apiServer.Spec.TLSSecurityProfile = midApiTlsSecurityProfile
 					Expect(cl.Update(context.TODO(), apiServer)).To(Succeed())
@@ -1509,7 +1556,7 @@ var _ = Describe("webhooks validator", func() {
 					Expect(util.GetClusterInfo().RefreshAPIServerCR(context.TODO(), cl)).To(Succeed())
 
 					_, minTypedTLSVersion = SelectCipherSuitesAndMinTLSVersion()
-					Expect(minTypedTLSVersion).Should(Equal(midExpected))
+					Expect(minTypedTLSVersion).To(Equal(midExpected))
 
 					apiServer.Spec.TLSSecurityProfile = finApiTlsSecurityProfile
 					Expect(cl.Update(context.TODO(), apiServer)).To(Succeed())
@@ -1517,7 +1564,7 @@ var _ = Describe("webhooks validator", func() {
 
 					Expect(util.GetClusterInfo().RefreshAPIServerCR(context.TODO(), cl)).To(Succeed())
 					_, minTypedTLSVersion = SelectCipherSuitesAndMinTLSVersion()
-					Expect(minTypedTLSVersion).Should(Equal(finExpected))
+					Expect(minTypedTLSVersion).To(Equal(finExpected))
 				},
 				Entry("nil on APIServer, nil on HCO -> old on API server -> nil on API server",
 					nil,
@@ -1569,10 +1616,182 @@ var _ = Describe("webhooks validator", func() {
 
 	})
 
+	Context("MediatedDeviceTypes", func() {
+		var cr *v1beta1.HyperConverged
+		var newCr *v1beta1.HyperConverged
+		var ctx context.Context
+
+		BeforeEach(func() {
+			Expect(os.Setenv("OPERATOR_NAMESPACE", HcoValidNamespace)).To(Succeed())
+			cr = commontestutils.NewHco()
+			cr.Spec.MediatedDevicesConfiguration = nil
+			newCr = cr.DeepCopy()
+			ctx = context.TODO()
+		})
+
+		DescribeTable("Check mediatedDevicesTypes -> mediatedDeviceTypes transition", func(mDConfiguration *v1beta1.MediatedDevicesConfiguration, expected types.GomegaMatcher) {
+			// create
+			newCr.Spec.MediatedDevicesConfiguration = mDConfiguration
+			Expect(wh.ValidateCreate(ctx, false, newCr)).To(expected)
+
+			// update
+			cli := getFakeClient(cr)
+			cli.InitiateUpdateErrors(getUpdateError(noFailure))
+			whU := NewWebhookHandler(logger, cli, decoder, HcoValidNamespace, true, nil)
+			Expect(whU.ValidateUpdate(ctx, false, newCr, cr)).To(expected)
+		},
+			Entry("should not fail with no configuration",
+				nil,
+				Succeed(),
+			),
+			Entry("should not fail if using only mediatedDeviceTypes",
+				&v1beta1.MediatedDevicesConfiguration{
+					MediatedDeviceTypes: []string{"nvidia-222", "nvidia-230"},
+					NodeMediatedDeviceTypes: []v1beta1.NodeMediatedDeviceTypesConfig{
+						{
+							NodeSelector: map[string]string{
+								"testLabel1": "true",
+							},
+							MediatedDeviceTypes: []string{
+								"nvidia-223",
+							},
+						},
+						{
+							NodeSelector: map[string]string{
+								"testLabel2": "true",
+							},
+							MediatedDeviceTypes: []string{
+								"nvidia-229",
+							},
+						},
+					},
+				},
+				Succeed(),
+			),
+			Entry("should not fail if using only deprecated APIs",
+				&v1beta1.MediatedDevicesConfiguration{
+					MediatedDevicesTypes: []string{"nvidia-222", "nvidia-230"},
+					NodeMediatedDeviceTypes: []v1beta1.NodeMediatedDeviceTypesConfig{
+						{
+							NodeSelector: map[string]string{
+								"testLabel1": "true",
+							},
+							MediatedDevicesTypes: []string{
+								"nvidia-223",
+							},
+						},
+						{
+							NodeSelector: map[string]string{
+								"testLabel2": "true",
+							},
+							MediatedDevicesTypes: []string{
+								"nvidia-229",
+							},
+						},
+					},
+				},
+				Succeed(),
+			),
+			Entry("should not fail if correctly using both mediatedDeviceTypes and deprecated APIs",
+				&v1beta1.MediatedDevicesConfiguration{
+					MediatedDevicesTypes: []string{"nvidia-222", "nvidia-230"},
+					MediatedDeviceTypes:  []string{"nvidia-222", "nvidia-230"},
+					NodeMediatedDeviceTypes: []v1beta1.NodeMediatedDeviceTypesConfig{
+						{
+							NodeSelector: map[string]string{
+								"testLabel1": "true",
+							},
+							MediatedDevicesTypes: []string{
+								"nvidia-223",
+							},
+							MediatedDeviceTypes: []string{
+								"nvidia-223",
+							},
+						},
+						{
+							NodeSelector: map[string]string{
+								"testLabel2": "true",
+							},
+							MediatedDevicesTypes: []string{
+								"nvidia-229",
+							},
+							MediatedDeviceTypes: []string{
+								"nvidia-229",
+							},
+						},
+					},
+				},
+				Succeed(),
+			),
+			Entry("should fail if mixing mediatedDeviceTypes and deprecated APIs on spec.mediatedDevicesConfiguration.mediatedDeviceTypes",
+				&v1beta1.MediatedDevicesConfiguration{
+					MediatedDevicesTypes: []string{"nvidia-222", "nvidia-230"},
+					MediatedDeviceTypes:  []string{"nvidia-222"},
+					NodeMediatedDeviceTypes: []v1beta1.NodeMediatedDeviceTypesConfig{
+						{
+							NodeSelector: map[string]string{
+								"testLabel1": "true",
+							},
+							MediatedDevicesTypes: []string{
+								"nvidia-223",
+							},
+							MediatedDeviceTypes: []string{
+								"nvidia-223",
+							},
+						},
+						{
+							NodeSelector: map[string]string{
+								"testLabel2": "true",
+							},
+							MediatedDevicesTypes: []string{
+								"nvidia-229",
+							},
+							MediatedDeviceTypes: []string{
+								"nvidia-229",
+							},
+						},
+					},
+				},
+				Not(Succeed()),
+			),
+			Entry("should fail if mixing mediatedDeviceTypes and deprecated APIs on spec.mediatedDevicesConfiguration.nodeMediatedDeviceTypes[1].mediatedDeviceTypes",
+				&v1beta1.MediatedDevicesConfiguration{
+					MediatedDevicesTypes: []string{"nvidia-222", "nvidia-230"},
+					MediatedDeviceTypes:  []string{"nvidia-222", "nvidia-230"},
+					NodeMediatedDeviceTypes: []v1beta1.NodeMediatedDeviceTypesConfig{
+						{
+							NodeSelector: map[string]string{
+								"testLabel1": "true",
+							},
+							MediatedDevicesTypes: []string{
+								"nvidia-223",
+							},
+							MediatedDeviceTypes: []string{
+								"nvidia-223",
+							},
+						},
+						{
+							NodeSelector: map[string]string{
+								"testLabel2": "true",
+							},
+							MediatedDevicesTypes: []string{
+								"nvidia-229",
+							},
+							MediatedDeviceTypes: []string{
+								"nvidia-229", "nvidia-230",
+							},
+						},
+					},
+				},
+				Not(Succeed()),
+			),
+		)
+
+	})
+
 })
 
 func newHyperConvergedConfig() *sdkapi.NodePlacement {
-	seconds1, seconds2 := int64(1), int64(2)
 	return &sdkapi.NodePlacement{
 		NodeSelector: map[string]string{
 			"key1": "value1",
@@ -1597,8 +1816,8 @@ func newHyperConvergedConfig() *sdkapi.NodePlacement {
 			},
 		},
 		Tolerations: []corev1.Toleration{
-			{Key: "key1", Operator: "operator1", Value: "value1", Effect: "effect1", TolerationSeconds: &seconds1},
-			{Key: "key2", Operator: "operator2", Value: "value2", Effect: "effect2", TolerationSeconds: &seconds2},
+			{Key: "key1", Operator: "operator1", Value: "value1", Effect: "effect1", TolerationSeconds: ptr.To[int64](1)},
+			{Key: "key2", Operator: "operator2", Value: "value2", Effect: "effect2", TolerationSeconds: ptr.To[int64](2)},
 		},
 	}
 }
@@ -1682,7 +1901,7 @@ func initiateTimeout(_ client.Object) error {
 func newRequest(operation admissionv1.Operation, cr *v1beta1.HyperConverged, encoder runtime.Encoder, dryrun bool) admission.Request {
 	req := admission.Request{
 		AdmissionRequest: admissionv1.AdmissionRequest{
-			DryRun:    pointer.Bool(dryrun),
+			DryRun:    ptr.To(dryrun),
 			Operation: operation,
 			Resource: metav1.GroupVersionResource{
 				Group:    v1beta1.SchemeGroupVersion.Group,

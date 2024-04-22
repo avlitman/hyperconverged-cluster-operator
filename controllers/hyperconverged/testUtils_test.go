@@ -11,6 +11,7 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	conditionsv1 "github.com/openshift/custom-resource-status/conditions/v1"
+	csvv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	operatorsapiv2 "github.com/operator-framework/api/pkg/operators/v2"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -20,9 +21,13 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	kubevirtcorev1 "kubevirt.io/api/core/v1"
+	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
+	sspv1beta2 "kubevirt.io/ssp-operator/api/v1beta2"
 
 	networkaddonsv1 "github.com/kubevirt/cluster-network-addons-operator/pkg/apis/networkaddonsoperator/v1"
 	hcov1beta1 "github.com/kubevirt/hyperconverged-cluster-operator/api/v1beta1"
@@ -33,9 +38,6 @@ import (
 	"github.com/kubevirt/hyperconverged-cluster-operator/pkg/components"
 	hcoutil "github.com/kubevirt/hyperconverged-cluster-operator/pkg/util"
 	"github.com/kubevirt/hyperconverged-cluster-operator/version"
-	kubevirtcorev1 "kubevirt.io/api/core/v1"
-	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
-	sspv1beta2 "kubevirt.io/ssp-operator/api/v1beta2"
 )
 
 // Mock TestRequest to simulate Reconcile() being called on an event for a watched resource
@@ -125,9 +127,12 @@ type BasicExpected struct {
 	virtioWinRoleBinding *rbacv1.RoleBinding
 	hcoCRD               *apiextensionsv1.CustomResourceDefinition
 	consolePluginDeploy  *appsv1.Deployment
+	consoleProxyDeploy   *appsv1.Deployment
 	consolePluginSvc     *corev1.Service
+	consoleProxySvc      *corev1.Service
 	consolePlugin        *consolev1.ConsolePlugin
 	consoleConfig        *operatorv1.Console
+	csv                  *csvv1alpha1.ClusterServiceVersion
 }
 
 func (be BasicExpected) toArray() []client.Object {
@@ -149,9 +154,12 @@ func (be BasicExpected) toArray() []client.Object {
 		be.virtioWinRoleBinding,
 		be.hcoCRD,
 		be.consolePluginDeploy,
+		be.consoleProxyDeploy,
 		be.consolePluginSvc,
+		be.consoleProxySvc,
 		be.consolePlugin,
 		be.consoleConfig,
+		be.csv,
 	}
 }
 
@@ -207,8 +215,8 @@ func getBasicDeployment() *BasicExpected {
 		Kind:               "Deployment",
 		Name:               "hco-operator",
 		UID:                "1234567890",
-		BlockOwnerDeletion: pointer.Bool(false),
-		Controller:         pointer.Bool(false),
+		BlockOwnerDeletion: ptr.To(false),
+		Controller:         ptr.To(false),
 	}
 	res.mService = alerts.NewMetricsService(namespace, deploymentRef)
 	res.serviceMonitor = alerts.NewServiceMonitor(namespace, deploymentRef)
@@ -235,7 +243,6 @@ func getBasicDeployment() *BasicExpected {
 	expectedCDI, err := operands.NewCDI(hco)
 	ExpectWithOffset(1, err).ToNot(HaveOccurred())
 	expectedCDI.Status.Conditions = getGenericCompletedConditions()
-	expectedCDI.Kind = cdiv1beta1.CDIGroupVersionKind.Kind
 	res.cdi = expectedCDI
 
 	expectedCNA, err := operands.NewNetworkAddons(hco)
@@ -267,12 +274,17 @@ func getBasicDeployment() *BasicExpected {
 	expectedVirtioWinRoleBinding := operands.NewVirtioWinCmReaderRoleBinding(hco)
 	res.virtioWinRoleBinding = expectedVirtioWinRoleBinding
 
-	expectedConsolePluginDeployment, err := operands.NewKvUIPluginDeplymnt(hco)
-	ExpectWithOffset(1, err).ToNot(HaveOccurred())
+	expectedConsolePluginDeployment := operands.NewKvUIPluginDeployment(hco)
 	res.consolePluginDeploy = expectedConsolePluginDeployment
+
+	expectedConsoleProxyDeployment := operands.NewKvUIProxyDeployment(hco)
+	res.consoleProxyDeploy = expectedConsoleProxyDeployment
 
 	expectedConsolePluginService := operands.NewKvUIPluginSvc(hco)
 	res.consolePluginSvc = expectedConsolePluginService
+
+	expectedConsoleProxyService := operands.NewKvUIProxySvc(hco)
+	res.consoleProxySvc = expectedConsoleProxyService
 
 	expectedConsolePlugin := operands.NewKVConsolePlugin(hco)
 	res.consolePlugin = expectedConsolePlugin
@@ -294,6 +306,9 @@ func getBasicDeployment() *BasicExpected {
 		},
 	}
 	res.hcoCRD = hcoCrd
+
+	csv := hcoutil.GetClusterInfo().GetCSV()
+	res.csv = csv
 
 	return res
 }

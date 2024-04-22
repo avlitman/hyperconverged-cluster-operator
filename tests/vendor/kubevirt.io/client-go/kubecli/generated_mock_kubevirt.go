@@ -75,7 +75,7 @@ import (
 	versioned1 "kubevirt.io/client-go/generated/kubevirt/clientset/versioned"
 	v1alpha19 "kubevirt.io/client-go/generated/kubevirt/clientset/versioned/typed/clone/v1alpha1"
 	v1alpha110 "kubevirt.io/client-go/generated/kubevirt/clientset/versioned/typed/export/v1alpha1"
-	v1alpha2 "kubevirt.io/client-go/generated/kubevirt/clientset/versioned/typed/instancetype/v1alpha2"
+	v1beta116 "kubevirt.io/client-go/generated/kubevirt/clientset/versioned/typed/instancetype/v1beta1"
 	v1alpha111 "kubevirt.io/client-go/generated/kubevirt/clientset/versioned/typed/migrations/v1alpha1"
 	v1alpha112 "kubevirt.io/client-go/generated/kubevirt/clientset/versioned/typed/pool/v1alpha1"
 	v1alpha113 "kubevirt.io/client-go/generated/kubevirt/clientset/versioned/typed/snapshot/v1alpha1"
@@ -215,9 +215,9 @@ func (_mr *_MockKubevirtClientRecorder) VirtualMachineExport(arg0 interface{}) *
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "VirtualMachineExport", arg0)
 }
 
-func (_m *MockKubevirtClient) VirtualMachineInstancetype(namespace string) v1alpha2.VirtualMachineInstancetypeInterface {
+func (_m *MockKubevirtClient) VirtualMachineInstancetype(namespace string) v1beta116.VirtualMachineInstancetypeInterface {
 	ret := _m.ctrl.Call(_m, "VirtualMachineInstancetype", namespace)
-	ret0, _ := ret[0].(v1alpha2.VirtualMachineInstancetypeInterface)
+	ret0, _ := ret[0].(v1beta116.VirtualMachineInstancetypeInterface)
 	return ret0
 }
 
@@ -225,9 +225,9 @@ func (_mr *_MockKubevirtClientRecorder) VirtualMachineInstancetype(arg0 interfac
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "VirtualMachineInstancetype", arg0)
 }
 
-func (_m *MockKubevirtClient) VirtualMachineClusterInstancetype() v1alpha2.VirtualMachineClusterInstancetypeInterface {
+func (_m *MockKubevirtClient) VirtualMachineClusterInstancetype() v1beta116.VirtualMachineClusterInstancetypeInterface {
 	ret := _m.ctrl.Call(_m, "VirtualMachineClusterInstancetype")
-	ret0, _ := ret[0].(v1alpha2.VirtualMachineClusterInstancetypeInterface)
+	ret0, _ := ret[0].(v1beta116.VirtualMachineClusterInstancetypeInterface)
 	return ret0
 }
 
@@ -235,9 +235,9 @@ func (_mr *_MockKubevirtClientRecorder) VirtualMachineClusterInstancetype() *gom
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "VirtualMachineClusterInstancetype")
 }
 
-func (_m *MockKubevirtClient) VirtualMachinePreference(namespace string) v1alpha2.VirtualMachinePreferenceInterface {
+func (_m *MockKubevirtClient) VirtualMachinePreference(namespace string) v1beta116.VirtualMachinePreferenceInterface {
 	ret := _m.ctrl.Call(_m, "VirtualMachinePreference", namespace)
-	ret0, _ := ret[0].(v1alpha2.VirtualMachinePreferenceInterface)
+	ret0, _ := ret[0].(v1beta116.VirtualMachinePreferenceInterface)
 	return ret0
 }
 
@@ -245,9 +245,9 @@ func (_mr *_MockKubevirtClientRecorder) VirtualMachinePreference(arg0 interface{
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "VirtualMachinePreference", arg0)
 }
 
-func (_m *MockKubevirtClient) VirtualMachineClusterPreference() v1alpha2.VirtualMachineClusterPreferenceInterface {
+func (_m *MockKubevirtClient) VirtualMachineClusterPreference() v1beta116.VirtualMachineClusterPreferenceInterface {
 	ret := _m.ctrl.Call(_m, "VirtualMachineClusterPreference")
-	ret0, _ := ret[0].(v1alpha2.VirtualMachineClusterPreferenceInterface)
+	ret0, _ := ret[0].(v1beta116.VirtualMachineClusterPreferenceInterface)
 	return ret0
 }
 
@@ -955,6 +955,17 @@ func (_mr *_MockKubevirtClientRecorder) Config() *gomock.Call {
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "Config")
 }
 
+func (_m *MockKubevirtClient) SetRestTimeout(timeout time.Duration) (KubevirtClient, error) {
+	ret := _m.ctrl.Call(_m, "SetRestTimeout", timeout)
+	ret0, _ := ret[0].(KubevirtClient)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+func (_mr *_MockKubevirtClientRecorder) SetRestTimeout(arg0 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "SetRestTimeout", arg0)
+}
+
 // Mock of StreamInterface interface
 type MockStreamInterface struct {
 	ctrl     *gomock.Controller
@@ -1267,14 +1278,46 @@ func (_mr *_MockVirtualMachineInstanceInterfaceRecorder) VSOCK(arg0, arg1 interf
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "VSOCK", arg0, arg1)
 }
 
-func (_m *MockVirtualMachineInstanceInterface) AddInterface(ctx context.Context, name string, addInterfaceOptions *v120.AddInterfaceOptions) error {
-	ret := _m.ctrl.Call(_m, "AddInterface", ctx, name, addInterfaceOptions)
+func (_m *MockVirtualMachineInstanceInterface) SEVFetchCertChain(name string) (v120.SEVPlatformInfo, error) {
+	ret := _m.ctrl.Call(_m, "SEVFetchCertChain", name)
+	ret0, _ := ret[0].(v120.SEVPlatformInfo)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+func (_mr *_MockVirtualMachineInstanceInterfaceRecorder) SEVFetchCertChain(arg0 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "SEVFetchCertChain", arg0)
+}
+
+func (_m *MockVirtualMachineInstanceInterface) SEVQueryLaunchMeasurement(name string) (v120.SEVMeasurementInfo, error) {
+	ret := _m.ctrl.Call(_m, "SEVQueryLaunchMeasurement", name)
+	ret0, _ := ret[0].(v120.SEVMeasurementInfo)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+func (_mr *_MockVirtualMachineInstanceInterfaceRecorder) SEVQueryLaunchMeasurement(arg0 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "SEVQueryLaunchMeasurement", arg0)
+}
+
+func (_m *MockVirtualMachineInstanceInterface) SEVSetupSession(name string, sevSessionOptions *v120.SEVSessionOptions) error {
+	ret := _m.ctrl.Call(_m, "SEVSetupSession", name, sevSessionOptions)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-func (_mr *_MockVirtualMachineInstanceInterfaceRecorder) AddInterface(arg0, arg1, arg2 interface{}) *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "AddInterface", arg0, arg1, arg2)
+func (_mr *_MockVirtualMachineInstanceInterfaceRecorder) SEVSetupSession(arg0, arg1 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "SEVSetupSession", arg0, arg1)
+}
+
+func (_m *MockVirtualMachineInstanceInterface) SEVInjectLaunchSecret(name string, sevSecretOptions *v120.SEVSecretOptions) error {
+	ret := _m.ctrl.Call(_m, "SEVInjectLaunchSecret", name, sevSecretOptions)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+func (_mr *_MockVirtualMachineInstanceInterfaceRecorder) SEVInjectLaunchSecret(arg0, arg1 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "SEVInjectLaunchSecret", arg0, arg1)
 }
 
 // Mock of ReplicaSetInterface interface
@@ -1736,16 +1779,6 @@ func (_m *MockVirtualMachineInterface) RemoveMemoryDump(ctx context.Context, nam
 
 func (_mr *_MockVirtualMachineInterfaceRecorder) RemoveMemoryDump(arg0, arg1 interface{}) *gomock.Call {
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "RemoveMemoryDump", arg0, arg1)
-}
-
-func (_m *MockVirtualMachineInterface) AddInterface(ctx context.Context, name string, addInterfaceOptions *v120.AddInterfaceOptions) error {
-	ret := _m.ctrl.Call(_m, "AddInterface", ctx, name, addInterfaceOptions)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-func (_mr *_MockVirtualMachineInterfaceRecorder) AddInterface(arg0, arg1, arg2 interface{}) *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "AddInterface", arg0, arg1, arg2)
 }
 
 // Mock of VirtualMachineInstanceMigrationInterface interface

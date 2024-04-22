@@ -32,17 +32,17 @@ import (
 	"sort"
 	"strings"
 
+	"dario.cat/mergo"
 	"github.com/blang/semver/v4"
 	"github.com/ghodss/yaml"
-	"github.com/imdario/mergo"
+	csvv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/kubevirt/hyperconverged-cluster-operator/pkg/components"
 	hcoutil "github.com/kubevirt/hyperconverged-cluster-operator/pkg/util"
 	"github.com/kubevirt/hyperconverged-cluster-operator/tools/util"
-
-	csvv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
-	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -53,6 +53,7 @@ const (
 	validOutputModes        = CSVMode + "|" + CRDMode
 	supported               = "supported"
 	operatorFrameworkPrefix = "operatorframework.io/"
+	mgImageAnnotation       = "operators.openshift.io/must-gather-image"
 )
 
 var (
@@ -87,10 +88,13 @@ var (
 	sspCsv              = flag.String("ssp-csv", "", "Scheduling Scale Performance CSV string")
 	cdiCsv              = flag.String("cdi-csv", "", "Containerized Data Importer CSV String")
 	hppCsv              = flag.String("hpp-csv", "", "HostPath Provisioner Operator CSV String")
+	mtqCsv              = flag.String("mtq-csv", "", "Managed Tenant Quota Operator CSV String")
+	aaqCsv              = flag.String("aaq-csv", "", "Applications Aware Quota Operator CSV String")
 	operatorImage       = flag.String("operator-image-name", "", "HyperConverged Cluster Operator image")
 	webhookImage        = flag.String("webhook-image-name", "", "HyperConverged Cluster Webhook image")
 	cliDownloadsImage   = flag.String("cli-downloads-image-name", "", "Downloads Server image")
 	kvUIPluginImage     = flag.String("kubevirt-consoleplugin-image-name", "", "KubeVirt Console Plugin image")
+	kvUIProxyImage      = flag.String("kubevirt-consoleproxy-image-name", "", "KubeVirt Console Proxy image")
 	kvVirtIOWinImage    = flag.String("kv-virtiowin-image-name", "", "KubeVirt VirtIO Win image")
 	smbios              = flag.String("smbios", "", "Custom SMBIOS string for KubeVirt ConfigMap")
 	machinetype         = flag.String("machinetype", "", "Custom MACHINETYPE string for KubeVirt ConfigMap")
@@ -114,12 +118,16 @@ var (
 	cnaoVersion                   = flag.String("cnao-version", "", "CNA operator version")
 	sspVersion                    = flag.String("ssp-version", "", "SSP operator version")
 	hppoVersion                   = flag.String("hppo-version", "", "HPP operator version")
+	mtqVersion                    = flag.String("mtq-version", "", "MTQ operator version")
+	aaqVersion                    = flag.String("aaq-version", "", "AAQ operator version")
 	apiSources                    = flag.String("api-sources", cwd+"/...", "Project sources")
 	enableUniqueSemver            = flag.Bool("enable-unique-version", false, "Insert a skipRange annotation to support unique semver in the CSV")
 	skipsList                     = flag.String("skips-list", "",
 		"Comma separated list of CSVs that can be skipped (read replaced) by this version")
 	olmSkipRange = flag.String("olm-skip-range", "",
 		"Semver range expression for CSVs that can be skipped (read replaced) by this version")
+	mgImage        = flag.String("mg-image", "quay.io/kubevirt/must-gather", "Operator suggested must-gather image")
+	testImagesNVRs = flag.String("test-images-nvrs", "", "Test Images NVRs")
 
 	envVars EnvVarFlags
 )
@@ -160,24 +168,24 @@ func validateNoAPIOverlap(crdDir string) error {
 	return checkAPIOverlapMap(overlapsMap)
 }
 
-func checkAPIOverlapMap(overlapsMap map[string][]string) error {
+func checkAPIOverlapMap(overlapsMap map[string]sets.Set[string]) error {
 	// if at least one overlap found - emit an error.
 	if len(overlapsMap) != 0 {
 		var sb strings.Builder
 		// WriteString always returns error=nil. no point to check it.
 		_, _ = sb.WriteString("ERROR: Overlapping API Groups were found between different operators.\n")
 		for apiGroup := range overlapsMap {
-			_, _ = sb.WriteString(fmt.Sprintf("The API Group %s is being used by these operators: %s\n", apiGroup, strings.Join(overlapsMap[apiGroup], ", ")))
+			_, _ = sb.WriteString(fmt.Sprintf("The API Group %s is being used by these operators: %s\n", apiGroup, strings.Join(overlapsMap[apiGroup].UnsortedList(), ", ")))
 		}
 		return errors.New(sb.String())
 	}
 	return nil
 }
 
-func detectAPIOverlap(crdMap map[string][]string) map[string][]string {
+func detectAPIOverlap(crdMap map[string][]string) map[string]sets.Set[string] {
 	// overlapsMap is populated with collisions found - API Groups as keys,
 	// and slice containing operators using them, as values.
-	overlapsMap := make(map[string][]string)
+	overlapsMap := make(map[string]sets.Set[string])
 	for operator, groups := range crdMap {
 		for _, apiGroup := range groups {
 			// We work on replacement for current v2v. Remove this check when vmware import is removed
@@ -191,15 +199,15 @@ func detectAPIOverlap(crdMap map[string][]string) map[string][]string {
 	return overlapsMap
 }
 
-func compareMapWithEntry(crdMap map[string][]string, operator string, apigroup string, overlapsMap map[string][]string) {
+func compareMapWithEntry(crdMap map[string][]string, operator string, apigroup string, overlapsMap map[string]sets.Set[string]) {
 	for comparedOperator := range crdMap {
 		if operator == comparedOperator { // don't check self
 			continue
 		}
 
 		if stringInSlice(apigroup, crdMap[comparedOperator]) {
-			appendOnce(overlapsMap[apigroup], operator)
-			appendOnce(overlapsMap[apigroup], comparedOperator)
+			overlapsMap[apigroup].Insert(operator)
+			overlapsMap[apigroup].Insert(comparedOperator)
 		}
 	}
 }
@@ -318,13 +326,18 @@ func getHcoCsv() {
 	if *specDisplayName != "" {
 		csvBase.Spec.DisplayName = *specDisplayName
 	}
+	if *mgImage != "" {
+		csvBase.Annotations[mgImageAnnotation] = *mgImage
+	}
+	if *testImagesNVRs != "" {
+		csvBase.ObjectMeta.Annotations["test-images-nvrs"] = *testImagesNVRs
+	}
 
 	setSupported(csvBase)
 
 	applyOverrides(csvBase)
 
 	csvBase.Spec.RelatedImages = sortRelatedImages(csvBase.Spec.RelatedImages)
-
 	panicOnError(util.MarshallObject(csvBase, os.Stdout))
 }
 
@@ -348,24 +361,20 @@ func getHiddenCrds(csvBase csvv1alpha1.ClusterServiceVersion) (string, error) {
 }
 
 func processCsvs(componentsWithCsvs []util.CsvWithComponent, installStrategyBase *csvv1alpha1.StrategyDetailsDeployment, csvBase *csvv1alpha1.ClusterServiceVersion, ris *[]csvv1alpha1.RelatedImage) {
-	for i, c := range componentsWithCsvs {
-		processOneCsv(c, i, installStrategyBase, csvBase, ris)
+	for _, c := range componentsWithCsvs {
+		processOneCsv(c, installStrategyBase, csvBase, ris)
 	}
 }
 
-var csvNames = []string{"CNA", "KubeVirt", "SSP", "CDI", "HPP", "VM Import"}
-
-func processOneCsv(c util.CsvWithComponent, i int, installStrategyBase *csvv1alpha1.StrategyDetailsDeployment, csvBase *csvv1alpha1.ClusterServiceVersion, ris *[]csvv1alpha1.RelatedImage) {
-	csvName := csvNames[i]
-
+func processOneCsv(c util.CsvWithComponent, installStrategyBase *csvv1alpha1.StrategyDetailsDeployment, csvBase *csvv1alpha1.ClusterServiceVersion, ris *[]csvv1alpha1.RelatedImage) {
 	if c.Csv == "" {
-		log.Panicf("ERROR: the %s CSV was empty", csvName)
+		log.Panicf("ERROR: the %s CSV was empty", c.Name)
 	}
 	csvBytes := []byte(c.Csv)
 
 	csvStruct := &csvv1alpha1.ClusterServiceVersion{}
 
-	panicOnError(yaml.Unmarshal(csvBytes, csvStruct), "failed to unmarshal the CSV for", csvName)
+	panicOnError(yaml.Unmarshal(csvBytes, csvStruct), "failed to unmarshal the CSV for", c.Name)
 
 	strategySpec := csvStruct.Spec.InstallStrategy.StrategySpec
 
@@ -392,12 +401,12 @@ func processOneCsv(c util.CsvWithComponent, i int, installStrategyBase *csvv1alp
 		csvBaseAlmString = "[" + csvBaseAlmString + "]"
 	}
 
-	panicOnError(json.Unmarshal([]byte(csvBaseAlmString), &baseAlmcrs), "failed to unmarshal the example from base from base csv for", csvName, "csvBaseAlmString:", csvBaseAlmString)
-	panicOnError(json.Unmarshal([]byte(csvStructAlmString), &structAlmcrs), "failed to unmarshal the example from base from struct csv for", csvName, "csvStructAlmString:", csvStructAlmString)
+	panicOnError(json.Unmarshal([]byte(csvBaseAlmString), &baseAlmcrs), "failed to unmarshal the example from base from base csv for", c.Name, "csvBaseAlmString:", csvBaseAlmString)
+	panicOnError(json.Unmarshal([]byte(csvStructAlmString), &structAlmcrs), "failed to unmarshal the example from base from struct csv for", c.Name, "csvStructAlmString:", csvStructAlmString)
 
 	baseAlmcrs = append(baseAlmcrs, structAlmcrs...)
 	almB, err := json.Marshal(baseAlmcrs)
-	panicOnError(err, "failed to marshal the combined example for", csvName)
+	panicOnError(err, "failed to marshal the combined example for", c.Name)
 	csvBase.Annotations[almExamplesAnnotation] = string(almB)
 
 	if !*ignoreComponentsRelatedImages {
@@ -444,24 +453,39 @@ func setSupported(csvBase *csvv1alpha1.ClusterServiceVersion) {
 func getInitialCsvList() []util.CsvWithComponent {
 	return []util.CsvWithComponent{
 		{
+			Name:      "CNA",
 			Csv:       *cnaCsv,
 			Component: hcoutil.AppComponentNetwork,
 		},
 		{
+			Name:      "KubeVirt",
 			Csv:       *virtCsv,
 			Component: hcoutil.AppComponentCompute,
 		},
 		{
+			Name:      "SSP",
 			Csv:       *sspCsv,
 			Component: hcoutil.AppComponentSchedule,
 		},
 		{
+			Name:      "CDI",
 			Csv:       *cdiCsv,
 			Component: hcoutil.AppComponentStorage,
 		},
 		{
+			Name:      "HPP",
 			Csv:       *hppCsv,
 			Component: hcoutil.AppComponentStorage,
+		},
+		{
+			Name:      "MTQ",
+			Csv:       *mtqCsv,
+			Component: hcoutil.AppComponentMultiTenant,
+		},
+		{
+			Name:      "AAQ",
+			Csv:       *aaqCsv,
+			Component: hcoutil.AppComponentQuotaMngt,
 		},
 	}
 }
@@ -505,6 +529,7 @@ func getDeploymentParams() *components.DeploymentOperatorParams {
 		WebhookImage:       *webhookImage,
 		CliDownloadsImage:  *cliDownloadsImage,
 		KVUIPluginImage:    *kvUIPluginImage,
+		KVUIProxyImage:     *kvUIProxyImage,
 		ImagePullPolicy:    "IfNotPresent",
 		VirtIOWinContainer: *kvVirtIOWinImage,
 		Smbios:             *smbios,
@@ -515,6 +540,8 @@ func getDeploymentParams() *components.DeploymentOperatorParams {
 		CnaoVersion:        *cnaoVersion,
 		SspVersion:         *sspVersion,
 		HppoVersion:        *hppoVersion,
+		MtqVersion:         *mtqVersion,
+		AaqVersion:         *aaqVersion,
 		Env:                envVars,
 	}
 }
@@ -568,17 +595,9 @@ func panicOnError(err error, info ...string) {
 	}
 }
 
-func appendOnce(slice []string, item string) []string {
-	if stringInSlice(item, slice) {
-		return slice
-	}
-
-	return append(slice, item)
-}
-
 func appendRelatedImageIfMissing(slice []csvv1alpha1.RelatedImage, ri csvv1alpha1.RelatedImage) []csvv1alpha1.RelatedImage {
 	for _, ele := range slice {
-		if ele.Name == ri.Name {
+		if ele.Image == ri.Image {
 			return slice
 		}
 	}

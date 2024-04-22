@@ -68,7 +68,7 @@ func findOwnResources(ctx context.Context, cl client.Reader, logger logr.Logger)
 			logger.Error(err, "Can't get deployment")
 			return
 		}
-		if GetClusterInfo().IsOpenshift() {
+		if GetClusterInfo().IsManagedByOLM() {
 			var err error
 			or.csv, err = getCSVFromDeployment(or.deployment, cl, operatorNs, logger)
 			if err != nil {
@@ -134,10 +134,6 @@ func getDeploymentFromPod(pod *corev1.Pod, c client.Reader, operatorNs string, l
 	if pod == nil {
 		return nil, nil
 	}
-	//operatorNs, err := GetOperatorNamespace(logger)
-	//if err != nil {
-	//	return nil, err
-	//}
 	rsReference := metav1.GetControllerOf(pod)
 	if rsReference == nil || rsReference.Kind != "ReplicaSet" {
 		err := errors.New("failed getting HCO replicaSet reference")

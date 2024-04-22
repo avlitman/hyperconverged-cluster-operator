@@ -2,6 +2,7 @@ package operands
 
 import (
 	"errors"
+	"maps"
 	"reflect"
 
 	"github.com/kubevirt/hyperconverged-cluster-operator/pkg/components"
@@ -94,8 +95,8 @@ func (*cnaHooks) updateCnaCr(req *common.HcoRequest, Client client.Client, found
 }
 
 func (*cnaHooks) updateLabels(found *networkaddonsv1.NetworkAddonsConfig, networkAddons *networkaddonsv1.NetworkAddonsConfig) bool {
-	if !reflect.DeepEqual(found.Labels, networkAddons.Labels) {
-		util.DeepCopyLabels(&networkAddons.ObjectMeta, &found.ObjectMeta)
+	if !util.CompareLabels(networkAddons, found) {
+		util.MergeLabels(&networkAddons.ObjectMeta, &found.ObjectMeta)
 		return true
 	}
 	return false
@@ -222,10 +223,7 @@ func hcoConfig2CnaoPlacement(hcoConf *sdkapi.NodePlacement) *networkaddonsshared
 
 	if len(hcoConf.NodeSelector) > 0 {
 		empty = false
-		cnaoPlacement.NodeSelector = make(map[string]string)
-		for k, v := range hcoConf.NodeSelector {
-			cnaoPlacement.NodeSelector[k] = v
-		}
+		cnaoPlacement.NodeSelector = maps.Clone(hcoConf.NodeSelector)
 	}
 
 	if empty {

@@ -81,6 +81,7 @@ if [[ -n "${KVM_EMULATION}" ]]; then
   ${CMD} wait deployment ${HCO_WH_DEPLOYMENT_NAME} --for condition=Available -n ${HCO_NAMESPACE} --timeout="30m"
 fi
 
+export OUTPUT_DIR=${ARTIFACT_DIR}
 source hack/compare_scc.sh
 dump_sccs_before
 
@@ -180,7 +181,7 @@ HCO_OPERATORGROUP_NAME=$(${CMD} get og -n ${HCO_NAMESPACE} -o jsonpath='{.items[
 source hack/patch_og.sh
 patch_og ${TARGET_CHANNEL}
 sleep 30
-CSV=$( ${CMD} get csv -o name -n ${HCO_NAMESPACE} | grep ${INITIAL_CHANNEL})
+CSV=$( ${CMD} get csv -o name -n ${HCO_NAMESPACE} | grep ${INITIAL_CHANNEL}) || true
 if [ -n "${CSV}" ] && [ ${OG_PATCHED} -eq 1 ]
 then
   ${CMD} delete "${CSV}" -n ${HCO_NAMESPACE}

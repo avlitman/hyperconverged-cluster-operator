@@ -18,6 +18,9 @@ digraph "managed-by" {
 	"NetworkAddonsConfig/cluster" [label="NetworkAddonsConfig/cluster"]
 	"deployment/hco-operator" [label="deployment/hco-operator"]
 	"deployment/hco-operator" -> "NetworkAddonsConfig/cluster"
+	"deployment/aaq-operator" [label="deployment/aaq-operator"]
+	olm [label=olm]
+	olm -> "deployment/aaq-operator"
 	"deployment/cdi-apiserver" [label="deployment/cdi-apiserver"]
 	"deployment/cdi-operator" [label="deployment/cdi-operator"]
 	"deployment/cdi-operator" -> "deployment/cdi-apiserver"
@@ -51,9 +54,15 @@ digraph "managed-by" {
 	"deployment/kubemacpool-mac-controller-manager" [label="deployment/kubemacpool-mac-controller-manager"]
 	"deployment/cluster-network-addons-operator" [label="deployment/cluster-network-addons-operator"]
 	"deployment/cluster-network-addons-operator" -> "deployment/kubemacpool-mac-controller-manager"
+	"deployment/kubevirt-apiserver-proxy" [label="deployment/kubevirt-apiserver-proxy"]
+	"deployment/hco-operator" [label="deployment/hco-operator"]
+	"deployment/hco-operator" -> "deployment/kubevirt-apiserver-proxy"
 	"deployment/kubevirt-console-plugin" [label="deployment/kubevirt-console-plugin"]
 	"deployment/hco-operator" [label="deployment/hco-operator"]
 	"deployment/hco-operator" -> "deployment/kubevirt-console-plugin"
+	"deployment/mtq-operator" [label="deployment/mtq-operator"]
+	olm [label=olm]
+	olm -> "deployment/mtq-operator"
 	"deployment/ssp-operator" [label="deployment/ssp-operator"]
 	olm [label=olm]
 	olm -> "deployment/ssp-operator"

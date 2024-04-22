@@ -2,6 +2,7 @@ package operands
 
 import (
 	"errors"
+	"maps"
 	"reflect"
 
 	corev1 "k8s.io/api/core/v1"
@@ -49,14 +50,14 @@ func (h cmHooks) updateCr(req *common.HcoRequest, Client client.Client, exists r
 	}
 
 	if !reflect.DeepEqual(found.Data, h.required.Data) ||
-		!reflect.DeepEqual(found.Labels, h.required.Labels) {
+		!util.CompareLabels(h.required, found) {
 		if req.HCOTriggered {
 			req.Logger.Info("Updating existing Configmap to new opinionated values", "name", h.required.Name)
 		} else {
 			req.Logger.Info("Reconciling an externally updated Configmap to its opinionated values", "name", h.required.Name)
 		}
-		util.DeepCopyLabels(&h.required.ObjectMeta, &found.ObjectMeta)
-		h.required.DeepCopyInto(found)
+		util.MergeLabels(&h.required.ObjectMeta, &found.ObjectMeta)
+		found.Data = maps.Clone(h.required.Data)
 		err := Client.Update(req.Ctx, found)
 		if err != nil {
 			return false, false, err

@@ -55,6 +55,7 @@ spec:
                 deployKubeSecondaryDNS: false
                 deployTektonTaskResources: false
                 enableCommonBootImageImport: true
+                nonRoot: true
                 withHostPassthroughCPU: false
               liveMigrationConfig:
                 allowAutoConverge: false
@@ -63,7 +64,11 @@ spec:
                 parallelMigrationsPerCluster: 5
                 parallelOutboundMigrationsPerNode: 2
                 progressTimeout: 150
+              resourceRequirements:
+                vmiCPUAllocationRatio: 10
               uninstallStrategy: BlockUninstallIfWorkloadsExist
+              virtualMachineOptions:
+                disableFreePageReporting: false
             description: HyperConvergedSpec defines the desired state of HyperConverged
             properties:
               certConfig:
@@ -1037,14 +1042,21 @@ spec:
                   are eventually going to consume the new default RuntimeClass.
                 type: string
               evictionStrategy:
-                description: EvictionStrategy defines at the cluster level if the
+                description: 'EvictionStrategy defines at the cluster level if the
                   VirtualMachineInstance should be migrated instead of shut-off in
                   case of a node drain. If the VirtualMachineInstance specific field
-                  is set it overrides the cluster level one. Defaults to LiveMigrate
-                  with multiple worker nodes, None on single worker clusters.
+                  is set it overrides the cluster level one. Allowed values: - `None`
+                  no eviction strategy at cluster level. - `LiveMigrate` migrate the
+                  VM on eviction; a not live migratable VM with no specific strategy
+                  will block the drain of the node util manually evicted. - `LiveMigrateIfPossible`
+                  migrate the VM on eviction if live migration is possible, otherwise
+                  directly evict. - `External` block the drain, track eviction and
+                  notify an external controller. Defaults to LiveMigrate with multiple
+                  worker nodes, None on single worker clusters.'
                 enum:
                 - None
                 - LiveMigrate
+                - LiveMigrateIfPossible
                 - External
                 type: string
               featureGates:
@@ -1052,6 +1064,7 @@ spec:
                   deployKubeSecondaryDNS: false
                   deployTektonTaskResources: false
                   enableCommonBootImageImport: true
+                  nonRoot: true
                   withHostPassthroughCPU: false
                 description: featureGates is a map of feature gate flags. Setting
                   a flag to `true` will enable the feature. Setting `false` or removing
@@ -1065,6 +1078,10 @@ spec:
                     default: false
                     description: deploy resources (kubevirt tekton tasks and example
                       pipelines) in SSP operator
+                    type: boolean
+                  deployVmConsoleProxy:
+                    default: false
+                    description: deploy VM console proxy resources in SSP operator
                     type: boolean
                   disableMDevConfiguration:
                     default: false
@@ -1081,6 +1098,7 @@ spec:
                       dataImportCronTemplates field.'
                     type: boolean
                   nonRoot:
+                    default: true
                     description: "Enables rootless virt-launcher. \n Deprecated: please
                       use the root FG."
                     type: boolean
@@ -1094,9 +1112,6 @@ spec:
                       the virt-handler pod. Enabling (or removing) the feature gate
                       causes the redeployment of the virt-handler pod.
                     type: boolean
-                  root:
-                    description: 'Enable root virt-launcher (default: false).'
-                    type: boolean
                   withHostPassthroughCPU:
                     default: false
                     description: Allow migrating a virtual machine with CPU host-passthrough
@@ -1104,10 +1119,6 @@ spec:
                       from CPU HW perspective doc here
                     type: boolean
                 type: object
-                x-kubernetes-validations:
-                - message: nonRoot FG is deprecated, please use root FG with opposite
-                    logic
-                  rule: '!has(self.nonRoot) || !has(self.root) || self.root == !self.nonRoot'
               filesystemOverhead:
                 description: FilesystemOverhead describes the space reserved for overhead
                   when using Filesystem volumes. A value is between 0 and 1, if not
@@ -2204,7 +2215,13 @@ spec:
                 description: MediatedDevicesConfiguration holds information about
                   MDEV types to be defined on nodes, if available
                 properties:
+                  mediatedDeviceTypes:
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: atomic
                   mediatedDevicesTypes:
+                    description: 'Deprecated: please use mediatedDeviceTypes instead.'
                     items:
                       type: string
                     type: array
@@ -2215,7 +2232,14 @@ spec:
                         about MDEV types to be defined in a specific node that matches
                         the NodeSelector field.
                       properties:
+                        mediatedDeviceTypes:
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
                         mediatedDevicesTypes:
+                          description: 'Deprecated: please use mediatedDeviceTypes
+                            instead.'
                           items:
                             type: string
                           type: array
@@ -2229,11 +2253,13 @@ spec:
                             More info: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/'
                           type: object
                       required:
-                      - mediatedDevicesTypes
+                      - mediatedDeviceTypes
                       - nodeSelector
                       type: object
                     type: array
                     x-kubernetes-list-type: atomic
+                required:
+                - mediatedDeviceTypes
                 type: object
               obsoleteCPUs:
                 description: ObsoleteCPUs allows avoiding scheduling of VMs for obsolete
@@ -2324,6 +2350,8 @@ spec:
                     x-kubernetes-list-type: map
                 type: object
               resourceRequirements:
+                default:
+                  vmiCPUAllocationRatio: 10
                 description: ResourceRequirements describes the resource requirements
                   for the operand workloads.
                 properties:
@@ -2377,6 +2405,19 @@ spec:
                           Limits. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                         type: object
                     type: object
+                  vmiCPUAllocationRatio:
+                    default: 10
+                    description: VmiCPUAllocationRatio defines, for each requested
+                      virtual CPU, how much physical CPU to request per VMI from the
+                      hosting node. The value is in fraction of a CPU thread (or core
+                      on non-hyperthreaded nodes). VMI POD CPU request = number of
+                      vCPUs * 1/vmiCPUAllocationRatio For example, a value of 1 means
+                      1 physical CPU thread per VMI CPU thread. A value of 100 would
+                      be 1% of a physical thread allocated for each requested VMI
+                      thread. This option has no effect on VMIs that request dedicated
+                      CPUs. Defaults to 10
+                    minimum: 1
+                    type: integer
                 type: object
               scratchSpaceStorageClass:
                 description: 'Override the storage class used for scratch space during
@@ -2529,6 +2570,21 @@ spec:
                 description: VDDK Init Image eventually used to import VMs from external
                   providers
                 type: string
+              virtualMachineOptions:
+                default:
+                  disableFreePageReporting: false
+                description: VirtualMachineOptions holds the cluster level information
+                  regarding the virtual machine.
+                properties:
+                  disableFreePageReporting:
+                    default: true
+                    description: DisableFreePageReporting disable the free page reporting
+                      of memory balloon device https://libvirt.org/formatdomain.html#memory-balloon-device.
+                      This will have effect only if AutoattachMemBalloon is not false
+                      and the vmi is not requesting any high performance feature (dedicatedCPU/realtime/hugePages),
+                      in which free page reporting is always disabled.
+                    type: boolean
+                type: object
               vmStateStorageClass:
                 description: VMStateStorageClass is the name of the storage class
                   to use for the PVCs created to preserve VM state, like TPM. The

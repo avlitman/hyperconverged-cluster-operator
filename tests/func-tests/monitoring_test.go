@@ -10,25 +10,22 @@ import (
 	"strconv"
 	"time"
 
-	openshiftroutev1 "github.com/openshift/api/route/v1"
-	authenticationv1 "k8s.io/api/authentication/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	kvtutil "kubevirt.io/kubevirt/tests/util"
-
-	"kubevirt.io/kubevirt/tests/flags"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	openshiftroutev1 "github.com/openshift/api/route/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	promApi "github.com/prometheus/client_golang/api"
 	promApiv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	promConfig "github.com/prometheus/common/config"
 	promModel "github.com/prometheus/common/model"
+	authenticationv1 "k8s.io/api/authentication/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 
 	tests "github.com/kubevirt/hyperconverged-cluster-operator/tests/func-tests"
 	"kubevirt.io/client-go/kubecli"
+	"kubevirt.io/kubevirt/tests/flags"
 )
 
 var runbookClient = http.DefaultClient
@@ -39,7 +36,7 @@ const (
 	criticalImpact
 )
 
-var _ = Describe("[crit:high][vendor:cnv-qe@redhat.com][level:system]Monitoring", func() {
+var _ = Describe("[crit:high][vendor:cnv-qe@redhat.com][level:system]Monitoring", Serial, Ordered, func() {
 	flag.Parse()
 
 	var err error
@@ -53,7 +50,7 @@ var _ = Describe("[crit:high][vendor:cnv-qe@redhat.com][level:system]Monitoring"
 
 	BeforeEach(func() {
 		virtCli, err = kubecli.GetKubevirtClient()
-		kvtutil.PanicOnError(err)
+		Expect(err).ToNot(HaveOccurred())
 
 		tests.SkipIfNotOpenShift(virtCli, "Prometheus")
 		promClient = initializePromClient(getPrometheusURL(virtCli), getAuthorizationTokenForPrometheus(virtCli))
@@ -68,8 +65,10 @@ var _ = Describe("[crit:high][vendor:cnv-qe@redhat.com][level:system]Monitoring"
 				if rule.Alert != "" {
 					Expect(rule.Annotations).To(HaveKeyWithValue("summary", Not(BeEmpty())),
 						"%s summary is missing or empty", rule.Alert)
-					Expect(rule.Annotations).To(HaveKeyWithValue("runbook_url", Not(BeEmpty())),
-						"%s runbook_url is missing or empty", rule.Alert)
+					Expect(rule.Annotations).To(HaveKey("runbook_url"),
+						"%s runbook_url is missing", rule.Alert)
+					Expect(rule.Annotations).To(HaveKeyWithValue("runbook_url", HaveSuffix(rule.Alert)),
+						"%s runbook_url is not equal to alert name", rule.Alert)
 					checkRunbookURLAvailability(rule)
 				}
 			}
@@ -93,27 +92,28 @@ var _ = Describe("[crit:high][vendor:cnv-qe@redhat.com][level:system]Monitoring"
 		}
 	})
 
-	It("KubevirtHyperconvergedClusterOperatorCRModification alert should fired when there is a modification on a CR", func() {
-		By("Fetching kubevirt object")
-		kubevirt, err := virtCli.KubeVirt(flags.KubeVirtInstallNamespace).Get("kubevirt-kubevirt-hyperconverged", &metav1.GetOptions{})
-		Expect(err).ShouldNot(HaveOccurred())
-
-		By("Updating kubevirt object with a new label")
-		kubevirt.Labels["test-label"] = "test-label-value"
-		_, err = virtCli.KubeVirt(flags.KubeVirtInstallNamespace).Update(kubevirt)
-		Expect(err).ShouldNot(HaveOccurred())
+	It("KubeVirtCRModified alert should fired when there is a modification on a CR", func() {
+		By("Patching kubevirt object")
+		Eventually(func(g Gomega) map[string]string {
+			patch := []byte(`[{"op": "add", "path": "/metadata/labels/test-label", "value": "test-label-value"}]`)
+			kv, err := virtCli.KubeVirt(flags.KubeVirtInstallNamespace).Patch("kubevirt-kubevirt-hyperconverged", types.JSONPatchType, patch, &metav1.PatchOptions{})
+			g.Expect(err).ToNot(HaveOccurred())
+			return kv.GetLabels()
+		}).WithTimeout(10 * time.Second).
+			WithPolling(100 * time.Millisecond).
+			Should(HaveKeyWithValue("test-label", "test-label-value"))
 
 		Eventually(func() *promApiv1.Alert {
 			alerts, err := promClient.Alerts(context.TODO())
-			Expect(err).ShouldNot(HaveOccurred())
-			alert := getAlertByName(alerts, "KubevirtHyperconvergedClusterOperatorCRModification")
+			Expect(err).ToNot(HaveOccurred())
+			alert := getAlertByName(alerts, "KubeVirtCRModified")
 			return alert
-		}, 60*time.Second, time.Second).ShouldNot(BeNil())
+		}).WithTimeout(60 * time.Second).WithPolling(time.Second).ShouldNot(BeNil())
 
 		verifyOperatorHealthMetricValue(promClient, initialOperatorHealthMetricValue, warningImpact)
 	})
 
-	It("KubevirtHyperconvergedClusterOperatorUSModification alert should fired when there is an jsonpatch annotation to modify an operand CRs", func() {
+	It("UnsupportedHCOModification alert should fired when there is an jsonpatch annotation to modify an operand CRs", func() {
 		By("Updating HCO object with a new label")
 		hco := tests.GetHCO(ctx, virtCli)
 
@@ -124,13 +124,24 @@ var _ = Describe("[crit:high][vendor:cnv-qe@redhat.com][level:system]Monitoring"
 
 		Eventually(func() *promApiv1.Alert {
 			alerts, err := promClient.Alerts(context.TODO())
-			Expect(err).ShouldNot(HaveOccurred())
-			alert := getAlertByName(alerts, "KubevirtHyperconvergedClusterOperatorUSModification")
+			Expect(err).ToNot(HaveOccurred())
+			alert := getAlertByName(alerts, "UnsupportedHCOModification")
 			return alert
 		}, 60*time.Second, time.Second).ShouldNot(BeNil())
 		verifyOperatorHealthMetricValue(promClient, initialOperatorHealthMetricValue, warningImpact)
 	})
 
+	It("[test_id:10760] KubevirtHyperconvergedClusterOperatorSingleStackIPv6 alert should be fired for single stack ipv6 cluster", func() {
+		tests.SkipIfNotSingleStackIPv6OpenShift(virtCli, "KubevirtHyperconvergedClusterOperatorSingleStackIPv6")
+
+		Eventually(func() *promApiv1.Alert {
+			alerts, err := promClient.Alerts(context.TODO())
+			Expect(err).ToNot(HaveOccurred())
+			return getAlertByName(alerts, "KubevirtHyperconvergedClusterOperatorSingleStackIPv6")
+		}, 60*time.Second, time.Second).ShouldNot(BeNil())
+
+		Expect(getMetricValue(promClient, "kubevirt_hco_single_stack_ipv6")).To(Equal(criticalImpact))
+	})
 })
 
 func getAlertByName(alerts promApiv1.AlertsResult, alertName string) *promApiv1.Alert {
@@ -204,7 +215,7 @@ func initializePromClient(prometheusURL string, token string) promApiv1.API {
 		RoundTripper: promConfig.NewAuthorizationCredentialsRoundTripper("Bearer", promConfig.Secret(token), defaultRoundTripper),
 	})
 
-	kvtutil.PanicOnError(err)
+	Expect(err).ToNot(HaveOccurred())
 
 	promClient := promApiv1.NewAPI(c)
 	return promClient
@@ -240,15 +251,17 @@ func getPrometheusURL(cli kubecli.KubevirtClient) string {
 
 	var route openshiftroutev1.Route
 
-	err := cli.RestClient().Get().
-		Resource("routes").
-		Name("prometheus-k8s").
-		Namespace("openshift-monitoring").
-		AbsPath("/apis", openshiftroutev1.GroupVersion.Group, openshiftroutev1.GroupVersion.Version).
-		Timeout(10 * time.Second).
-		Do(context.TODO()).Into(&route)
-
-	kvtutil.PanicOnError(err)
+	Eventually(func() error {
+		return cli.RestClient().Get().
+			Resource("routes").
+			Name("prometheus-k8s").
+			Namespace("openshift-monitoring").
+			AbsPath("/apis", openshiftroutev1.GroupVersion.Group, openshiftroutev1.GroupVersion.Version).
+			Timeout(10 * time.Second).
+			Do(context.TODO()).Into(&route)
+	}).WithTimeout(2 * time.Minute).
+		WithPolling(15 * time.Second). // longer than the request timeout
+		Should(Succeed())
 
 	return fmt.Sprintf("https://%s", route.Spec.Host)
 }

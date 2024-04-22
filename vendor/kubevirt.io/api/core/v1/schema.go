@@ -39,6 +39,15 @@ const (
 
 const HotplugDiskDir = "/var/run/kubevirt/hotplug-disks/"
 
+type DiskErrorPolicy string
+
+const (
+	DiskErrorPolicyStop     DiskErrorPolicy = "stop"
+	DiskErrorPolicyIgnore   DiskErrorPolicy = "ignore"
+	DiskErrorPolicyReport   DiskErrorPolicy = "report"
+	DiskErrorPolicyEnospace DiskErrorPolicy = "enospace"
+)
+
 /*
  ATTENTION: Rerun code generators when comments on structs or fields are modified.
 */
@@ -237,6 +246,10 @@ type EFI struct {
 	// Defaults to true
 	// +optional
 	SecureBoot *bool `json:"secureBoot,omitempty"`
+	// If set to true, Persistent will persist the EFI NVRAM across reboots.
+	// Defaults to false
+	// +optional
+	Persistent *bool `json:"persistent,omitempty"`
 }
 
 // If set, the VM will be booted from the defined kernel / initrd.
@@ -293,6 +306,9 @@ type CPU struct {
 	// Sockets specifies the number of sockets inside the vmi.
 	// Must be a value greater or equal 1.
 	Sockets uint32 `json:"sockets,omitempty"`
+	// MaxSockets specifies the maximum amount of sockets that can
+	// be hotplugged
+	MaxSockets uint32 `json:"maxSockets,omitempty"`
 	// Threads specifies the number of threads inside the vmi.
 	// Must be a value greater or equal 1.
 	Threads uint32 `json:"threads,omitempty"`
@@ -370,6 +386,21 @@ type Memory struct {
 	// Defaults to the requested memory in the resources section if not specified.
 	// + optional
 	Guest *resource.Quantity `json:"guest,omitempty"`
+	// MaxGuest allows to specify the maximum amount of memory which is visible inside the Guest OS.
+	// The delta between MaxGuest and Guest is the amount of memory that can be hot(un)plugged.
+	MaxGuest *resource.Quantity `json:"maxGuest,omitempty"`
+}
+
+type MemoryStatus struct {
+	// GuestAtBoot specifies with how much memory the VirtualMachine intiallly booted with.
+	// +optional
+	GuestAtBoot *resource.Quantity `json:"guestAtBoot,omitempty"`
+	// GuestCurrent specifies how much memory is currently available for the VirtualMachine.
+	// +optional
+	GuestCurrent *resource.Quantity `json:"guestCurrent,omitempty"`
+	// GuestRequested specifies how much memory was requested (hotplug) for the VirtualMachine.
+	// +optional
+	GuestRequested *resource.Quantity `json:"guestRequested,omitempty"`
 }
 
 // Hugepages allow to use hugepages for the VirtualMachineInstance instead of regular memory.
@@ -396,6 +427,15 @@ type Firmware struct {
 	// Settings to set the kernel for booting.
 	// +optional
 	KernelBoot *KernelBoot `json:"kernelBoot,omitempty"`
+	// Information that can be set in the ACPI table
+	ACPI *ACPI `json:"acpi,omitempty"`
+}
+
+type ACPI struct {
+	// SlicNameRef should match the volume name of a secret object. The data in the secret should
+	// be a binary blob that follows the ACPI SLIC standard, see:
+	// https://learn.microsoft.com/en-us/previous-versions/windows/hardware/design/dn653305(v=vs.85)
+	SlicNameRef string `json:"slicNameRef,omitempty"`
 }
 
 type Devices struct {
@@ -418,9 +458,14 @@ type Devices struct {
 	// Whether to attach the default graphics device or not.
 	// VNC will not be available if set to false. Defaults to true.
 	AutoattachGraphicsDevice *bool `json:"autoattachGraphicsDevice,omitempty"`
-	// Whether to attach the default serial console or not.
+	// Whether to attach the default virtio-serial console or not.
 	// Serial console access will not be available if set to false. Defaults to true.
 	AutoattachSerialConsole *bool `json:"autoattachSerialConsole,omitempty"`
+	// Whether to log the auto-attached default serial console or not.
+	// Serial console logs will be collect to a file and then streamed from a named `guest-console-log`.
+	// Not relevant if autoattachSerialConsole is disabled.
+	// Defaults to cluster wide setting on VirtualMachineOptions.
+	LogSerialConsole *bool `json:"logSerialConsole,omitempty"`
 	// Whether to attach the Memory balloon device with default period.
 	// Period can be adjusted in virt-config.
 	// Defaults to true.
@@ -447,6 +492,9 @@ type Devices struct {
 	// +optional
 	// +listType=atomic
 	GPUs []GPU `json:"gpus,omitempty"`
+	// DownwardMetrics creates a virtio serials for exposing the downward metrics to the vmi.
+	// +optional
+	DownwardMetrics *DownwardMetrics `json:"downwardMetrics,omitempty"`
 	// Filesystems describes filesystem which is connected to the vmi.
 	// +optional
 	// +listType=atomic
@@ -532,6 +580,8 @@ type Filesystem struct {
 
 type FilesystemVirtiofs struct{}
 
+type DownwardMetrics struct{}
+
 type GPU struct {
 	// Name of the GPU device as exposed by a device plugin
 	Name              string       `json:"name"`
@@ -603,6 +653,9 @@ type Disk struct {
 	// If specified the disk is made sharable and multiple write from different VMs are permitted
 	// +optional
 	Shareable *bool `json:"shareable,omitempty"`
+	// If specified, it can change the default error policy (stop) for the disk
+	// +optional
+	ErrorPolicy *DiskErrorPolicy `json:"errorPolicy,omitempty"`
 }
 
 // CustomBlockSize represents the desired logical and physical block size for a VM disk.
@@ -656,6 +709,26 @@ type LaunchSecurity struct {
 }
 
 type SEV struct {
+	// Guest policy flags as defined in AMD SEV API specification.
+	// Note: due to security reasons it is not allowed to enable guest debugging. Therefore NoDebug flag is not exposed to users and is always true.
+	Policy *SEVPolicy `json:"policy,omitempty"`
+	// If specified, run the attestation process for a vmi.
+	// +opitonal
+	Attestation *SEVAttestation `json:"attestation,omitempty"`
+	// Base64 encoded session blob.
+	Session string `json:"session,omitempty"`
+	// Base64 encoded guest owner's Diffie-Hellman key.
+	DHCert string `json:"dhCert,omitempty"`
+}
+
+type SEVPolicy struct {
+	// SEV-ES is required.
+	// Defaults to false.
+	// +optional
+	EncryptedState *bool `json:"encryptedState,omitempty"`
+}
+
+type SEVAttestation struct {
 }
 
 type LunTarget struct {
@@ -1162,6 +1235,10 @@ type Interface struct {
 	// BindingMethod specifies the method which will be used to connect the interface to the guest.
 	// Defaults to Bridge.
 	InterfaceBindingMethod `json:",inline"`
+	// Binding specifies the binding plugin that will be used to connect the interface to the guest.
+	// It provides an alternative to InterfaceBindingMethod.
+	// version: 1alphav1
+	Binding *PluginBinding `json:"binding,omitempty"`
 	// List of ports to be forwarded to the virtual machine.
 	Ports []Port `json:"ports,omitempty"`
 	// Interface MAC address. For example: de:ad:00:00:be:af or DE-AD-00-00-BE-AF.
@@ -1186,7 +1263,17 @@ type Interface struct {
 	// This value is required to be unique across all devices and be between 1 and (16*1024-1).
 	// +optional
 	ACPIIndex int `json:"acpiIndex,omitempty"`
+	// State represents the requested operational state of the interface.
+	// The (only) value supported is `absent`, expressing a request to remove the interface.
+	// +optional
+	State InterfaceState `json:"state,omitempty"`
 }
+
+type InterfaceState string
+
+const (
+	InterfaceStateAbsent InterfaceState = "absent"
+)
 
 // Extra DHCP options to use in the interface.
 type DHCPOptions struct {
@@ -1239,8 +1326,12 @@ type InterfaceBindingMethod struct {
 	Slirp      *InterfaceSlirp      `json:"slirp,omitempty"`
 	Masquerade *InterfaceMasquerade `json:"masquerade,omitempty"`
 	SRIOV      *InterfaceSRIOV      `json:"sriov,omitempty"`
-	Macvtap    *InterfaceMacvtap    `json:"macvtap,omitempty"`
-	Passt      *InterfacePasst      `json:"passt,omitempty"`
+	// Deprecated, please refer to Kubevirt user guide for alternatives.
+	// +optional
+	Macvtap *InterfaceMacvtap `json:"macvtap,omitempty"`
+	// Deprecated, please refer to Kubevirt user guide for alternatives.
+	// +optional
+	Passt *InterfacePasst `json:"passt,omitempty"`
 }
 
 // InterfaceBridge connects to a given network via a linux bridge.
@@ -1260,6 +1351,13 @@ type InterfaceMacvtap struct{}
 
 // InterfacePasst connects to a given network.
 type InterfacePasst struct{}
+
+// PluginBinding represents a binding implemented in a plugin.
+type PluginBinding struct {
+	// Name references to the binding name as denined in the kubevirt CR.
+	// version: 1alphav1
+	Name string `json:"name"`
+}
 
 // Port represents a port to expose from the virtual machine.
 // Default protocol TCP.
@@ -1285,6 +1383,7 @@ type AccessCredentialSecretSource struct {
 }
 
 type ConfigDriveSSHPublicKeyAccessCredentialPropagation struct{}
+type NoCloudSSHPublicKeyAccessCredentialPropagation struct{}
 
 // AuthorizedKeysFile represents a path within the guest
 // that ssh public keys should be propagated to
@@ -1321,6 +1420,11 @@ type SSHPublicKeyAccessCredentialPropagationMethod struct {
 	// into the VM using metadata using the configDrive cloud-init provider
 	// +optional
 	ConfigDrive *ConfigDriveSSHPublicKeyAccessCredentialPropagation `json:"configDrive,omitempty"`
+
+	// NoCloudPropagation means that the ssh public keys are injected
+	// into the VM using metadata using the noCloud cloud-init provider
+	// +optional
+	NoCloud *NoCloudSSHPublicKeyAccessCredentialPropagation `json:"noCloud,omitempty"`
 
 	// QemuGuestAgentAccessCredentailPropagation means ssh public keys are
 	// dynamically injected into the vm at runtime via the qemu guest agent.
@@ -1443,4 +1547,18 @@ type MultusNetwork struct {
 	// Select the default network and add it to the
 	// multus-cni.io/default-network annotation.
 	Default bool `json:"default,omitempty"`
+}
+
+// CPUTopology allows specifying the amount of cores, sockets
+// and threads.
+type CPUTopology struct {
+	// Cores specifies the number of cores inside the vmi.
+	// Must be a value greater or equal 1.
+	Cores uint32 `json:"cores,omitempty"`
+	// Sockets specifies the number of sockets inside the vmi.
+	// Must be a value greater or equal 1.
+	Sockets uint32 `json:"sockets,omitempty"`
+	// Threads specifies the number of threads inside the vmi.
+	// Must be a value greater or equal 1.
+	Threads uint32 `json:"threads,omitempty"`
 }

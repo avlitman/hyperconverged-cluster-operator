@@ -2,6 +2,7 @@ package operands
 
 import (
 	"context"
+	"maps"
 	"reflect"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -9,6 +10,7 @@ import (
 	consolev1 "github.com/openshift/api/console/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/reference"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -41,8 +43,8 @@ var _ = Describe("CLI Download", func() {
 			foundResource := &consolev1.ConsoleCLIDownload{}
 			Expect(cl.Get(context.TODO(), key, foundResource)).ToNot(HaveOccurred())
 			Expect(foundResource.Name).To(Equal(expectedResource.Name))
-			Expect(foundResource.Labels).Should(HaveKeyWithValue(hcoutil.AppLabel, commontestutils.Name))
-			Expect(foundResource.Spec.Links).Should(HaveLen(6))
+			Expect(foundResource.Labels).To(HaveKeyWithValue(hcoutil.AppLabel, commontestutils.Name))
+			Expect(foundResource.Spec.Links).To(HaveLen(6))
 			Expect(foundResource.Namespace).To(Equal(expectedResource.Namespace))
 		})
 
@@ -100,6 +102,66 @@ var _ = Describe("CLI Download", func() {
 			}),
 		)
 
+		It("should reconcile managed labels to default without touching user added ones", func() {
+			const userLabelKey = "userLabelKey"
+			const userLabelValue = "userLabelValue"
+			outdatedResource := NewConsoleCLIDownload(hco)
+			expectedLabels := maps.Clone(outdatedResource.Labels)
+			for k, v := range expectedLabels {
+				outdatedResource.Labels[k] = "wrong_" + v
+			}
+			outdatedResource.Labels[userLabelKey] = userLabelValue
+
+			cl := commontestutils.InitClient([]client.Object{hco, outdatedResource})
+			handler := (*genericOperand)(newCliDownloadHandler(cl, commontestutils.GetScheme()))
+
+			res := handler.ensure(req)
+			Expect(res.UpgradeDone).To(BeFalse())
+			Expect(res.Updated).To(BeTrue())
+			Expect(res.Err).ToNot(HaveOccurred())
+
+			foundResource := &consolev1.ConsoleCLIDownload{}
+			Expect(
+				cl.Get(context.TODO(),
+					types.NamespacedName{Name: outdatedResource.Name, Namespace: outdatedResource.Namespace},
+					foundResource),
+			).ToNot(HaveOccurred())
+
+			for k, v := range expectedLabels {
+				Expect(foundResource.Labels).To(HaveKeyWithValue(k, v))
+			}
+			Expect(foundResource.Labels).To(HaveKeyWithValue(userLabelKey, userLabelValue))
+		})
+
+		It("should reconcile managed labels to default on label deletion without touching user added ones", func() {
+			const userLabelKey = "userLabelKey"
+			const userLabelValue = "userLabelValue"
+			outdatedResource := NewConsoleCLIDownload(hco)
+			expectedLabels := maps.Clone(outdatedResource.Labels)
+			outdatedResource.Labels[userLabelKey] = userLabelValue
+			delete(outdatedResource.Labels, hcoutil.AppLabelVersion)
+
+			cl := commontestutils.InitClient([]client.Object{hco, outdatedResource})
+			handler := (*genericOperand)(newCliDownloadHandler(cl, commontestutils.GetScheme()))
+
+			res := handler.ensure(req)
+			Expect(res.UpgradeDone).To(BeFalse())
+			Expect(res.Updated).To(BeTrue())
+			Expect(res.Err).ToNot(HaveOccurred())
+
+			foundResource := &consolev1.ConsoleCLIDownload{}
+			Expect(
+				cl.Get(context.TODO(),
+					types.NamespacedName{Name: outdatedResource.Name, Namespace: outdatedResource.Namespace},
+					foundResource),
+			).ToNot(HaveOccurred())
+
+			for k, v := range expectedLabels {
+				Expect(foundResource.Labels).To(HaveKeyWithValue(k, v))
+			}
+			Expect(foundResource.Labels).To(HaveKeyWithValue(userLabelKey, userLabelValue))
+		})
+
 	})
 })
 
@@ -125,7 +187,7 @@ var _ = Describe("Downloads Service", func() {
 			foundResource := &corev1.Service{}
 			Expect(cl.Get(context.TODO(), key, foundResource)).ToNot(HaveOccurred())
 			Expect(foundResource.Name).To(Equal(expectedResource.Name))
-			Expect(foundResource.Labels).Should(HaveKeyWithValue(hcoutil.AppLabel, commontestutils.Name))
+			Expect(foundResource.Labels).To(HaveKeyWithValue(hcoutil.AppLabel, commontestutils.Name))
 			Expect(foundResource.Namespace).To(Equal(expectedResource.Namespace))
 		})
 
@@ -206,7 +268,7 @@ var _ = Describe("Cli Downloads Route", func() {
 			foundResource := &routev1.Route{}
 			Expect(cl.Get(context.TODO(), key, foundResource)).ToNot(HaveOccurred())
 			Expect(foundResource.Name).To(Equal(expectedResource.Name))
-			Expect(foundResource.Labels).Should(HaveKeyWithValue(hcoutil.AppLabel, commontestutils.Name))
+			Expect(foundResource.Labels).To(HaveKeyWithValue(hcoutil.AppLabel, commontestutils.Name))
 			Expect(foundResource.Namespace).To(Equal(expectedResource.Namespace))
 		})
 
@@ -251,8 +313,9 @@ var _ = Describe("Cli Downloads Route", func() {
 			Expect(hco.Status.RelatedObjects).To(ContainElement(*objectRefFound))
 		},
 			Entry("with modified labels", func(resource *routev1.Route) {
-				resource.Labels = map[string]string{"key": "value"}
+				resource.Labels = map[string]string{"app.kubernetes.io/managed-by": "value"}
 			}),
+			// TODO: add another test for additional labels
 			Entry("with modified port", func(resource *routev1.Route) {
 				resource.Spec.Port = &routev1.RoutePort{
 					TargetPort: intstr.IntOrString{IntVal: 1111},

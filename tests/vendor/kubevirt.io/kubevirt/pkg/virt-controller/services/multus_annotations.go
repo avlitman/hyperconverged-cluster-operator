@@ -23,24 +23,24 @@ import (
 	"encoding/json"
 	"fmt"
 
+	networkv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
+
+	k8sv1 "k8s.io/api/core/v1"
+
 	v1 "kubevirt.io/api/core/v1"
+	"kubevirt.io/client-go/log"
 
 	"kubevirt.io/kubevirt/pkg/network/namescheme"
+	"kubevirt.io/kubevirt/pkg/network/netbinding"
 	"kubevirt.io/kubevirt/pkg/network/vmispec"
+	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
 )
 
-type multusNetworkAnnotation struct {
-	InterfaceName string `json:"interface"`
-	Mac           string `json:"mac,omitempty"`
-	NetworkName   string `json:"name"`
-	Namespace     string `json:"namespace"`
-}
-
 type multusNetworkAnnotationPool struct {
-	pool []multusNetworkAnnotation
+	pool []networkv1.NetworkSelectionElement
 }
 
-func (mnap *multusNetworkAnnotationPool) add(multusNetworkAnnotation multusNetworkAnnotation) {
+func (mnap *multusNetworkAnnotationPool) add(multusNetworkAnnotation networkv1.NetworkSelectionElement) {
 	mnap.pool = append(mnap.pool, multusNetworkAnnotation)
 }
 
@@ -56,15 +56,31 @@ func (mnap multusNetworkAnnotationPool) toString() (string, error) {
 	return string(multusNetworksAnnotation), nil
 }
 
-func GenerateMultusCNIAnnotation(vmi *v1.VirtualMachineInstance) (string, error) {
+func GenerateMultusCNIAnnotation(namespace string, interfaces []v1.Interface, networks []v1.Network, config *virtconfig.ClusterConfig) (string, error) {
+	return GenerateMultusCNIAnnotationFromNameScheme(namespace, interfaces, networks, namescheme.CreateHashedNetworkNameScheme(networks), config)
+}
+
+func GenerateMultusCNIAnnotationFromNameScheme(namespace string, interfaces []v1.Interface, networks []v1.Network, networkNameScheme map[string]string, config *virtconfig.ClusterConfig) (string, error) {
 	multusNetworkAnnotationPool := multusNetworkAnnotationPool{}
 
-	networkNameScheme := namescheme.CreateNetworkNameScheme(vmi.Spec.Networks)
-	for _, network := range vmi.Spec.Networks {
+	for _, network := range networks {
 		if vmispec.IsSecondaryMultusNetwork(network) {
 			podInterfaceName := networkNameScheme[network.Name]
 			multusNetworkAnnotationPool.add(
-				newMultusAnnotationData(vmi, network, podInterfaceName))
+				newMultusAnnotationData(namespace, interfaces, network, podInterfaceName))
+		}
+
+		if config != nil && config.NetworkBindingPlugingsEnabled() {
+			if iface := vmispec.LookupInterfaceByName(interfaces, network.Name); iface.Binding != nil {
+				bindingPluginAnnotationData, err := newBindingPluginMultusAnnotationData(
+					config.GetConfig(), iface.Binding.Name, namespace, network.Name)
+				if err != nil {
+					return "", err
+				}
+				if bindingPluginAnnotationData != nil {
+					multusNetworkAnnotationPool.add(*bindingPluginAnnotationData)
+				}
+			}
 		}
 	}
 
@@ -74,26 +90,65 @@ func GenerateMultusCNIAnnotation(vmi *v1.VirtualMachineInstance) (string, error)
 	return "", nil
 }
 
-func newMultusAnnotationData(vmi *v1.VirtualMachineInstance, network v1.Network, podInterfaceName string) multusNetworkAnnotation {
-	multusIface := getIfaceByName(vmi, network.Name)
-	namespace, networkName := getNamespaceAndNetworkName(vmi, network.Multus.NetworkName)
+func newBindingPluginMultusAnnotationData(kvConfig *v1.KubeVirtConfiguration, pluginName, namespace, networkName string) (*networkv1.NetworkSelectionElement, error) {
+	plugin := netbinding.ReadNetBindingPluginConfiguration(kvConfig, pluginName)
+	if plugin == nil {
+		return nil, fmt.Errorf("unable to find the network binding plugin '%s' in Kubevirt configuration", pluginName)
+	}
+
+	if plugin.NetworkAttachmentDefinition == "" {
+		return nil, nil
+	}
+	netAttachDefNamespace, netAttachDefName := getNamespaceAndNetworkName(namespace, plugin.NetworkAttachmentDefinition)
+
+	// cniArgNetworkName is the CNI arg name for the VM spec network logical name.
+	// The binding plugin CNI should read this arg and realize which logical network it should modify.
+	const cniArgNetworkName = "logicNetworkName"
+
+	return &networkv1.NetworkSelectionElement{
+		Namespace: netAttachDefNamespace,
+		Name:      netAttachDefName,
+		CNIArgs: &map[string]interface{}{
+			cniArgNetworkName: networkName,
+		},
+	}, nil
+}
+
+func newMultusAnnotationData(namespace string, interfaces []v1.Interface, network v1.Network, podInterfaceName string) networkv1.NetworkSelectionElement {
+	multusIface := vmispec.LookupInterfaceByName(interfaces, network.Name)
+	namespace, networkName := getNamespaceAndNetworkName(namespace, network.Multus.NetworkName)
 	var multusIfaceMac string
 	if multusIface != nil {
 		multusIfaceMac = multusIface.MacAddress
 	}
-	return multusNetworkAnnotation{
-		InterfaceName: podInterfaceName,
-		Mac:           multusIfaceMac,
-		Namespace:     namespace,
-		NetworkName:   networkName,
+	return networkv1.NetworkSelectionElement{
+		InterfaceRequest: podInterfaceName,
+		MacRequest:       multusIfaceMac,
+		Namespace:        namespace,
+		Name:             networkName,
 	}
 }
 
-func getIfaceByName(vmi *v1.VirtualMachineInstance, name string) *v1.Interface {
-	for i, iface := range vmi.Spec.Domain.Devices.Interfaces {
-		if iface.Name == name {
-			return &vmi.Spec.Domain.Devices.Interfaces[i]
-		}
+func NonDefaultMultusNetworksIndexedByIfaceName(pod *k8sv1.Pod) map[string]networkv1.NetworkStatus {
+	indexedNetworkStatus := map[string]networkv1.NetworkStatus{}
+	podNetworkStatus, found := pod.Annotations[networkv1.NetworkStatusAnnot]
+
+	if !found {
+		return indexedNetworkStatus
 	}
-	return nil
+
+	var networkStatus []networkv1.NetworkStatus
+	if err := json.Unmarshal([]byte(podNetworkStatus), &networkStatus); err != nil {
+		log.Log.Errorf("failed to unmarshall pod network status: %v", err)
+		return indexedNetworkStatus
+	}
+
+	for _, ns := range networkStatus {
+		if ns.Default {
+			continue
+		}
+		indexedNetworkStatus[ns.Interface] = ns
+	}
+
+	return indexedNetworkStatus
 }

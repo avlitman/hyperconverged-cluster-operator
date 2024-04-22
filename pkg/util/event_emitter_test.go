@@ -8,7 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 var _ = Describe("", func() {
@@ -54,7 +54,7 @@ var _ = Describe("", func() {
 				Expect(mock.events).To(HaveLen(1))
 				rsEvent, found := mock.events["ConfigMap"]
 				Expect(found).To(BeTrue())
-				Expect(rsEvent).Should(Equal(expectedEvent))
+				Expect(rsEvent).To(Equal(expectedEvent))
 
 				_, found = mock.events["Pod"]
 				Expect(found).To(BeFalse())
@@ -89,7 +89,7 @@ var _ = Describe("", func() {
 							APIVersion: "apps/v1",
 							Kind:       "Deployment",
 							Name:       rsName,
-							Controller: pointer.Bool(true),
+							Controller: ptr.To(true),
 						},
 					},
 				},
@@ -108,7 +108,7 @@ var _ = Describe("", func() {
 							APIVersion: "apps/v1",
 							Kind:       "ReplicaSet",
 							Name:       rsName,
-							Controller: pointer.Bool(true),
+							Controller: ptr.To(true),
 						},
 					},
 				},
@@ -135,15 +135,15 @@ var _ = Describe("", func() {
 
 				rsEvent, found := mock.events["ReplicaSet"]
 				Expect(found).To(BeTrue())
-				Expect(rsEvent).Should(Equal(expectedEvent))
+				Expect(rsEvent).To(Equal(expectedEvent))
 
 				rsEvent, found = mock.events["Pod"]
 				Expect(found).To(BeTrue())
-				Expect(rsEvent).Should(Equal(expectedEvent))
+				Expect(rsEvent).To(Equal(expectedEvent))
 
 				rsEvent, found = mock.events["ClusterServiceVersion"]
 				Expect(found).To(BeTrue())
-				Expect(rsEvent).Should(Equal(expectedEvent))
+				Expect(rsEvent).To(Equal(expectedEvent))
 			})
 
 		})

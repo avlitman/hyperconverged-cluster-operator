@@ -13,15 +13,18 @@ const (
 	CnaoVersionEnvV                  = "NETWORK_ADDONS_VERSION"
 	SspVersionEnvV                   = "SSP_VERSION"
 	HppoVersionEnvV                  = "HPPO_VERSION"
+	MtqVersionEnvV                   = "MTQ_VERSION"
+	AaqVersionEnvV                   = "AAQ_VERSION"
 	KVUIPluginImageEnvV              = "KV_CONSOLE_PLUGIN_IMAGE"
+	KVUIProxyImageEnvV               = "KV_CONSOLE_PROXY_IMAGE"
 	HcoValidatingWebhook             = "validate-hco.kubevirt.io"
 	HcoMutatingWebhookNS             = "mutate-ns-hco.kubevirt.io"
+	PrometheusRuleCRDName            = "prometheusrules.monitoring.coreos.com"
+	ServiceMonitorCRDName            = "servicemonitors.monitoring.coreos.com"
 	HcoMutatingWebhookHyperConverged = "mutate-hyperconverged-hco.kubevirt.io"
 	AppLabel                         = "app"
 	UndefinedNamespace               = ""
 	OpenshiftNamespace               = "openshift"
-	OperatorTestNamespace            = "test-operators"
-	OperatorHubNamespace             = "operators"
 	APIVersionAlpha                  = "v1alpha1"
 	APIVersionBeta                   = "v1beta1"
 	CurrentAPIVersion                = APIVersionBeta
@@ -64,6 +67,7 @@ const (
 
 	CliDownloadsServerPort       = 8080
 	UIPluginServerPort     int32 = 9443
+	UIProxyServerPort      int32 = 8080
 
 	APIServerCRName = "cluster"
 
@@ -73,11 +77,14 @@ const (
 type AppComponent string
 
 const (
-	AppComponentCompute    AppComponent = "compute"
-	AppComponentStorage    AppComponent = "storage"
-	AppComponentNetwork    AppComponent = "network"
-	AppComponentMonitoring AppComponent = "monitoring"
-	AppComponentSchedule   AppComponent = "schedule"
-	AppComponentDeployment AppComponent = "deployment"
-	AppComponentUIPlugin   AppComponent = "kubevirt-console-plugin"
+	AppComponentCompute     AppComponent = "compute"
+	AppComponentStorage     AppComponent = "storage"
+	AppComponentNetwork     AppComponent = "network"
+	AppComponentMonitoring  AppComponent = "monitoring"
+	AppComponentSchedule    AppComponent = "schedule"
+	AppComponentDeployment  AppComponent = "deployment"
+	AppComponentUIPlugin    AppComponent = "kubevirt-console-plugin"
+	AppComponentUIProxy     AppComponent = "kubevirt-apiserver-proxy"
+	AppComponentMultiTenant AppComponent = "multi-tenant"
+	AppComponentQuotaMngt   AppComponent = "quota-management"
 )

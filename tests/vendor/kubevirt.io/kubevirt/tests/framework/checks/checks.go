@@ -2,6 +2,8 @@ package checks
 
 import (
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"kubevirt.io/kubevirt/tests/framework/kubevirt"
@@ -66,10 +68,10 @@ func HasFeature(feature string) bool {
 	return false
 }
 
-func IsSEVCapable(node *v1.Node) bool {
+func IsSEVCapable(node *v1.Node, sevLabel string) bool {
 	gomega.Expect(node).ToNot(gomega.BeNil())
 	for label, _ := range node.Labels {
-		if label == v12.SEVLabel {
+		if label == sevLabel {
 			return true
 		}
 	}
@@ -117,4 +119,9 @@ func RequireFeatureGateVirtHandlerRestart(feature string) bool {
 		}
 	}
 	return false
+}
+
+func IsRunningOnKindInfra() bool {
+	provider := os.Getenv("KUBEVIRT_PROVIDER")
+	return strings.HasPrefix(provider, "kind")
 }

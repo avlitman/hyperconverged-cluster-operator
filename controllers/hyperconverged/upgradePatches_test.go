@@ -55,8 +55,7 @@ var _ = Describe("upgradePatches", func() {
 			Expect(copyTestFile("badJson.json")).To(Succeed())
 
 			err := validateUpgradePatches(req)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).Should(HavePrefix("invalid character"))
+			Expect(err).To(MatchError(HavePrefix("invalid character")))
 		})
 
 		Context("hcoCRPatchList", func() {
@@ -65,18 +64,14 @@ var _ = Describe("upgradePatches", func() {
 				Expect(copyTestFile("badSemverRange.json")).To(Succeed())
 
 				err := validateUpgradePatches(req)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).Should(HavePrefix("Could not get version from string:"))
+				Expect(err).To(MatchError(HavePrefix("Could not get version from string:")))
 			})
 
 			DescribeTable(
 				"should fail validating upgradePatches with bad patches",
 				func(filename, message string) {
 					Expect(copyTestFile(filename)).To(Succeed())
-
-					err := validateUpgradePatches(req)
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).Should(HavePrefix(message))
+					Expect(validateUpgradePatches(req)).To(MatchError(HavePrefix(message)))
 				},
 				Entry(
 					"bad operation kind",
@@ -95,26 +90,58 @@ var _ = Describe("upgradePatches", func() {
 				),
 			)
 
+			DescribeTable(
+				"should handle MissingPathOnRemove according to jsonPatchApplyOptions",
+				func(filename string, expectedErr bool, message string) {
+					Expect(copyTestFile(filename)).To(Succeed())
+
+					err := validateUpgradePatches(req)
+					if expectedErr {
+						Expect(err).To(MatchError(HavePrefix(message)))
+					} else {
+						Expect(err).ToNot(HaveOccurred())
+					}
+				},
+				Entry(
+					"without jsonPatchApplyOptions",
+					"badPatches4.json",
+					true,
+					"remove operation does not apply: doc is missing path: ",
+				),
+				Entry(
+					"with AllowMissingPathOnRemove on jsonPatchApplyOptions",
+					"badPatches5.json",
+					false,
+					"",
+				),
+				Entry(
+					"without jsonPatchApplyOptions",
+					"badPatches6.json",
+					true,
+					"add operation does not apply: doc is missing path: ",
+				),
+				Entry(
+					"with EnsurePathExistsOnAdd on jsonPatchApplyOptions",
+					"badPatches7.json",
+					false,
+					"",
+				),
+			)
+
 		})
 
 		Context("objectsToBeRemoved", func() {
 
 			It("should fail validating upgradePatches with bad semver ranges", func() {
 				Expect(copyTestFile("badSemverRangeOR.json")).To(Succeed())
-
-				err := validateUpgradePatches(req)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).Should(HavePrefix("Could not get version from string:"))
+				Expect(validateUpgradePatches(req)).To(MatchError(HavePrefix("Could not get version from string:")))
 			})
 
 			DescribeTable(
 				"should fail validating upgradePatches with bad patches",
 				func(filename, message string) {
 					Expect(copyTestFile(filename)).To(Succeed())
-
-					err := validateUpgradePatches(req)
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).Should(HavePrefix(message))
+					Expect(validateUpgradePatches(req)).To(MatchError(HavePrefix(message)))
 				},
 				Entry(
 					"empty object kind",

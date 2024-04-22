@@ -2,27 +2,29 @@ package operands
 
 import (
 	"context"
+	"maps"
 	"time"
-
-	openshiftconfigv1 "github.com/openshift/api/config/v1"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	openshiftconfigv1 "github.com/openshift/api/config/v1"
 	conditionsv1 "github.com/openshift/custom-resource-status/conditions/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/reference"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	networkaddonsshared "github.com/kubevirt/cluster-network-addons-operator/pkg/apis/networkaddonsoperator/shared"
 	networkaddonsv1 "github.com/kubevirt/cluster-network-addons-operator/pkg/apis/networkaddonsoperator/v1"
+	sdkapi "kubevirt.io/controller-lifecycle-operator-sdk/api"
+
 	hcov1beta1 "github.com/kubevirt/hyperconverged-cluster-operator/api/v1beta1"
 	"github.com/kubevirt/hyperconverged-cluster-operator/controllers/common"
 	"github.com/kubevirt/hyperconverged-cluster-operator/controllers/commontestutils"
 	hcoutil "github.com/kubevirt/hyperconverged-cluster-operator/pkg/util"
-	sdkapi "kubevirt.io/controller-lifecycle-operator-sdk/api"
 )
 
 var _ = Describe("CNA Operand", func() {
@@ -52,7 +54,7 @@ var _ = Describe("CNA Operand", func() {
 					foundResource),
 			).To(Succeed())
 			Expect(foundResource.Name).To(Equal(expectedResource.Name))
-			Expect(foundResource.Labels).Should(HaveKeyWithValue(hcoutil.AppLabel, commontestutils.Name))
+			Expect(foundResource.Labels).To(HaveKeyWithValue(hcoutil.AppLabel, commontestutils.Name))
 			Expect(foundResource.Namespace).To(Equal(expectedResource.Namespace))
 			Expect(foundResource.Spec.Multus).To(Equal(&networkaddonsshared.Multus{}))
 			Expect(foundResource.Spec.LinuxBridge).To(Equal(&networkaddonsshared.LinuxBridge{}))
@@ -128,6 +130,68 @@ var _ = Describe("CNA Operand", func() {
 
 		})
 
+		It("should reconcile managed labels to default without touching user added ones", func() {
+			const userLabelKey = "userLabelKey"
+			const userLabelValue = "userLabelValue"
+			outdatedResource, err := NewNetworkAddons(hco)
+			Expect(err).ToNot(HaveOccurred())
+			expectedLabels := maps.Clone(outdatedResource.Labels)
+			for k, v := range expectedLabels {
+				outdatedResource.Labels[k] = "wrong_" + v
+			}
+			outdatedResource.Labels[userLabelKey] = userLabelValue
+
+			cl := commontestutils.InitClient([]client.Object{hco, outdatedResource})
+			handler := (*genericOperand)(newCnaHandler(cl, commontestutils.GetScheme()))
+
+			res := handler.ensure(req)
+			Expect(res.UpgradeDone).To(BeFalse())
+			Expect(res.Updated).To(BeTrue())
+			Expect(res.Err).ToNot(HaveOccurred())
+
+			foundResource := &networkaddonsv1.NetworkAddonsConfig{}
+			Expect(
+				cl.Get(context.TODO(),
+					types.NamespacedName{Name: outdatedResource.Name, Namespace: outdatedResource.Namespace},
+					foundResource),
+			).ToNot(HaveOccurred())
+
+			for k, v := range expectedLabels {
+				Expect(foundResource.Labels).To(HaveKeyWithValue(k, v))
+			}
+			Expect(foundResource.Labels).To(HaveKeyWithValue(userLabelKey, userLabelValue))
+		})
+
+		It("should reconcile managed labels to default on label deletion without touching user added ones", func() {
+			const userLabelKey = "userLabelKey"
+			const userLabelValue = "userLabelValue"
+			outdatedResource, err := NewNetworkAddons(hco)
+			Expect(err).ToNot(HaveOccurred())
+			expectedLabels := maps.Clone(outdatedResource.Labels)
+			outdatedResource.Labels[userLabelKey] = userLabelValue
+			delete(outdatedResource.Labels, hcoutil.AppLabelVersion)
+
+			cl := commontestutils.InitClient([]client.Object{hco, outdatedResource})
+			handler := (*genericOperand)(newCnaHandler(cl, commontestutils.GetScheme()))
+
+			res := handler.ensure(req)
+			Expect(res.UpgradeDone).To(BeFalse())
+			Expect(res.Updated).To(BeTrue())
+			Expect(res.Err).ToNot(HaveOccurred())
+
+			foundResource := &networkaddonsv1.NetworkAddonsConfig{}
+			Expect(
+				cl.Get(context.TODO(),
+					types.NamespacedName{Name: outdatedResource.Name, Namespace: outdatedResource.Namespace},
+					foundResource),
+			).ToNot(HaveOccurred())
+
+			for k, v := range expectedLabels {
+				Expect(foundResource.Labels).To(HaveKeyWithValue(k, v))
+			}
+			Expect(foundResource.Labels).To(HaveKeyWithValue(userLabelKey, userLabelValue))
+		})
+
 		It("should add node placement if missing in CNAO", func() {
 			existingResource, err := NewNetworkAddons(hco)
 			Expect(err).ToNot(HaveOccurred())
@@ -153,11 +217,11 @@ var _ = Describe("CNA Operand", func() {
 			Expect(foundResource.Spec.PlacementConfiguration).ToNot(BeNil())
 			placementConfig := foundResource.Spec.PlacementConfiguration
 			Expect(placementConfig.Infra).ToNot(BeNil())
-			Expect(placementConfig.Infra.NodeSelector["key1"]).Should(Equal("value1"))
-			Expect(placementConfig.Infra.NodeSelector["key2"]).Should(Equal("value2"))
+			Expect(placementConfig.Infra.NodeSelector["key1"]).To(Equal("value1"))
+			Expect(placementConfig.Infra.NodeSelector["key2"]).To(Equal("value2"))
 
 			Expect(placementConfig.Workloads).ToNot(BeNil())
-			Expect(placementConfig.Workloads.Tolerations).Should(Equal(hco.Spec.Workloads.NodePlacement.Tolerations))
+			Expect(placementConfig.Workloads.Tolerations).To(Equal(hco.Spec.Workloads.NodePlacement.Tolerations))
 
 			Expect(req.Conditions).To(BeEmpty())
 		})
@@ -198,9 +262,8 @@ var _ = Describe("CNA Operand", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// now, modify HCO's node placement
-			seconds3 := int64(3)
 			hco.Spec.Infra.NodePlacement.Tolerations = append(hco.Spec.Infra.NodePlacement.Tolerations, corev1.Toleration{
-				Key: "key3", Operator: "operator3", Value: "value3", Effect: "effect3", TolerationSeconds: &seconds3,
+				Key: "key3", Operator: "operator3", Value: "value3", Effect: "effect3", TolerationSeconds: ptr.To[int64](3),
 			})
 
 			hco.Spec.Workloads.NodePlacement.NodeSelector["key1"] = "something else"
@@ -221,11 +284,11 @@ var _ = Describe("CNA Operand", func() {
 
 			Expect(existingResource.Spec.PlacementConfiguration).ToNot(BeNil())
 			Expect(existingResource.Spec.PlacementConfiguration.Infra.Tolerations).To(HaveLen(2))
-			Expect(existingResource.Spec.PlacementConfiguration.Workloads.NodeSelector["key1"]).Should(Equal("value1"))
+			Expect(existingResource.Spec.PlacementConfiguration.Workloads.NodeSelector["key1"]).To(Equal("value1"))
 
 			Expect(foundResource.Spec.PlacementConfiguration).ToNot(BeNil())
 			Expect(foundResource.Spec.PlacementConfiguration.Infra.Tolerations).To(HaveLen(3))
-			Expect(foundResource.Spec.PlacementConfiguration.Workloads.NodeSelector["key1"]).Should(Equal("something else"))
+			Expect(foundResource.Spec.PlacementConfiguration.Workloads.NodeSelector["key1"]).To(Equal("something else"))
 
 			Expect(req.Conditions).To(BeEmpty())
 		})
@@ -240,12 +303,11 @@ var _ = Describe("CNA Operand", func() {
 			req.HCOTriggered = false
 
 			// now, modify CNAO node placement
-			seconds3 := int64(3)
 			existingResource.Spec.PlacementConfiguration.Infra.Tolerations = append(hco.Spec.Infra.NodePlacement.Tolerations, corev1.Toleration{
-				Key: "key3", Operator: "operator3", Value: "value3", Effect: "effect3", TolerationSeconds: &seconds3,
+				Key: "key3", Operator: "operator3", Value: "value3", Effect: "effect3", TolerationSeconds: ptr.To[int64](3),
 			})
 			existingResource.Spec.PlacementConfiguration.Workloads.Tolerations = append(hco.Spec.Workloads.NodePlacement.Tolerations, corev1.Toleration{
-				Key: "key3", Operator: "operator3", Value: "value3", Effect: "effect3", TolerationSeconds: &seconds3,
+				Key: "key3", Operator: "operator3", Value: "value3", Effect: "effect3", TolerationSeconds: ptr.To[int64](3),
 			})
 
 			existingResource.Spec.PlacementConfiguration.Infra.NodeSelector["key1"] = "BADvalue1"
@@ -268,13 +330,13 @@ var _ = Describe("CNA Operand", func() {
 
 			Expect(existingResource.Spec.PlacementConfiguration.Infra.Tolerations).To(HaveLen(3))
 			Expect(existingResource.Spec.PlacementConfiguration.Workloads.Tolerations).To(HaveLen(3))
-			Expect(existingResource.Spec.PlacementConfiguration.Infra.NodeSelector["key1"]).Should(Equal("BADvalue1"))
-			Expect(existingResource.Spec.PlacementConfiguration.Workloads.NodeSelector["key2"]).Should(Equal("BADvalue2"))
+			Expect(existingResource.Spec.PlacementConfiguration.Infra.NodeSelector["key1"]).To(Equal("BADvalue1"))
+			Expect(existingResource.Spec.PlacementConfiguration.Workloads.NodeSelector["key2"]).To(Equal("BADvalue2"))
 
 			Expect(foundResource.Spec.PlacementConfiguration.Infra.Tolerations).To(HaveLen(2))
 			Expect(foundResource.Spec.PlacementConfiguration.Workloads.Tolerations).To(HaveLen(2))
-			Expect(foundResource.Spec.PlacementConfiguration.Infra.NodeSelector["key1"]).Should(Equal("value1"))
-			Expect(foundResource.Spec.PlacementConfiguration.Workloads.NodeSelector["key2"]).Should(Equal("value2"))
+			Expect(foundResource.Spec.PlacementConfiguration.Infra.NodeSelector["key1"]).To(Equal("value1"))
+			Expect(foundResource.Spec.PlacementConfiguration.Workloads.NodeSelector["key2"]).To(Equal("value2"))
 
 			Expect(req.Conditions).To(BeEmpty())
 		})
@@ -310,10 +372,10 @@ var _ = Describe("CNA Operand", func() {
 
 			Expect(foundResource.Spec.SelfSignConfiguration).ToNot(BeNil())
 			selfSignedConfig := foundResource.Spec.SelfSignConfiguration
-			Expect(selfSignedConfig.CARotateInterval).Should(Equal("24h0m0s"))
-			Expect(selfSignedConfig.CAOverlapInterval).Should(Equal("1h0m0s"))
-			Expect(selfSignedConfig.CertRotateInterval).Should(Equal("12h0m0s"))
-			Expect(selfSignedConfig.CertOverlapInterval).Should(Equal("30m0s"))
+			Expect(selfSignedConfig.CARotateInterval).To(Equal("24h0m0s"))
+			Expect(selfSignedConfig.CAOverlapInterval).To(Equal("1h0m0s"))
+			Expect(selfSignedConfig.CertRotateInterval).To(Equal("12h0m0s"))
+			Expect(selfSignedConfig.CertOverlapInterval).To(Equal("30m0s"))
 
 			Expect(req.Conditions).To(BeEmpty())
 		})
@@ -339,10 +401,10 @@ var _ = Describe("CNA Operand", func() {
 
 			Expect(foundResource.Spec.SelfSignConfiguration.CARotateInterval).ToNot(BeNil())
 			selfSignedConfig := foundResource.Spec.SelfSignConfiguration
-			Expect(selfSignedConfig.CARotateInterval).Should(Equal("48h0m0s"))
-			Expect(selfSignedConfig.CAOverlapInterval).Should(Equal("24h0m0s"))
-			Expect(selfSignedConfig.CertRotateInterval).Should(Equal("24h0m0s"))
-			Expect(selfSignedConfig.CertOverlapInterval).Should(Equal("12h0m0s"))
+			Expect(selfSignedConfig.CARotateInterval).To(Equal("48h0m0s"))
+			Expect(selfSignedConfig.CAOverlapInterval).To(Equal("24h0m0s"))
+			Expect(selfSignedConfig.CertRotateInterval).To(Equal("24h0m0s"))
+			Expect(selfSignedConfig.CertOverlapInterval).To(Equal("12h0m0s"))
 
 			Expect(req.Conditions).To(BeEmpty())
 		})
@@ -384,17 +446,17 @@ var _ = Describe("CNA Operand", func() {
 
 			Expect(existingResource.Spec.SelfSignConfiguration).ToNot(BeNil())
 			existingSelfSignedConfig := existingResource.Spec.SelfSignConfiguration
-			Expect(existingSelfSignedConfig.CARotateInterval).Should(Equal("24h0m0s"))
-			Expect(existingSelfSignedConfig.CAOverlapInterval).Should(Equal("1h0m0s"))
-			Expect(existingSelfSignedConfig.CertRotateInterval).Should(Equal("12h0m0s"))
-			Expect(existingSelfSignedConfig.CertOverlapInterval).Should(Equal("30m0s"))
+			Expect(existingSelfSignedConfig.CARotateInterval).To(Equal("24h0m0s"))
+			Expect(existingSelfSignedConfig.CAOverlapInterval).To(Equal("1h0m0s"))
+			Expect(existingSelfSignedConfig.CertRotateInterval).To(Equal("12h0m0s"))
+			Expect(existingSelfSignedConfig.CertOverlapInterval).To(Equal("30m0s"))
 
 			Expect(foundResource.Spec.SelfSignConfiguration).ToNot(BeNil())
 			foundSelfSignedConfig := foundResource.Spec.SelfSignConfiguration
-			Expect(foundSelfSignedConfig.CARotateInterval).Should(Equal("48h0m0s"))
-			Expect(foundSelfSignedConfig.CAOverlapInterval).Should(Equal("2h0m0s"))
-			Expect(foundSelfSignedConfig.CertRotateInterval).Should(Equal("24h0m0s"))
-			Expect(foundSelfSignedConfig.CertOverlapInterval).Should(Equal("1h0m0s"))
+			Expect(foundSelfSignedConfig.CARotateInterval).To(Equal("48h0m0s"))
+			Expect(foundSelfSignedConfig.CAOverlapInterval).To(Equal("2h0m0s"))
+			Expect(foundSelfSignedConfig.CertRotateInterval).To(Equal("24h0m0s"))
+			Expect(foundSelfSignedConfig.CertOverlapInterval).To(Equal("1h0m0s"))
 
 			Expect(req.Conditions).To(BeEmpty())
 		})
@@ -440,17 +502,17 @@ var _ = Describe("CNA Operand", func() {
 
 			Expect(existingResource.Spec.SelfSignConfiguration).ToNot(BeNil())
 			existingSelfSignedConfig := existingResource.Spec.SelfSignConfiguration
-			Expect(existingSelfSignedConfig.CARotateInterval).Should(Equal("48h0m0s"))
-			Expect(existingSelfSignedConfig.CAOverlapInterval).Should(Equal("2h0m0s"))
-			Expect(existingSelfSignedConfig.CertRotateInterval).Should(Equal("24h0m0s"))
-			Expect(existingSelfSignedConfig.CertOverlapInterval).Should(Equal("1h0m0s"))
+			Expect(existingSelfSignedConfig.CARotateInterval).To(Equal("48h0m0s"))
+			Expect(existingSelfSignedConfig.CAOverlapInterval).To(Equal("2h0m0s"))
+			Expect(existingSelfSignedConfig.CertRotateInterval).To(Equal("24h0m0s"))
+			Expect(existingSelfSignedConfig.CertOverlapInterval).To(Equal("1h0m0s"))
 
 			Expect(foundResource.Spec.SelfSignConfiguration).ToNot(BeNil())
 			foundSelfSignedConfig := foundResource.Spec.SelfSignConfiguration
-			Expect(foundSelfSignedConfig.CARotateInterval).Should(Equal("24h0m0s"))
-			Expect(foundSelfSignedConfig.CAOverlapInterval).Should(Equal("1h0m0s"))
-			Expect(foundSelfSignedConfig.CertRotateInterval).Should(Equal("12h0m0s"))
-			Expect(foundSelfSignedConfig.CertOverlapInterval).Should(Equal("30m0s"))
+			Expect(foundSelfSignedConfig.CARotateInterval).To(Equal("24h0m0s"))
+			Expect(foundSelfSignedConfig.CAOverlapInterval).To(Equal("1h0m0s"))
+			Expect(foundSelfSignedConfig.CertRotateInterval).To(Equal("12h0m0s"))
+			Expect(foundSelfSignedConfig.CertOverlapInterval).To(Equal("30m0s"))
 
 			Expect(req.Conditions).To(BeEmpty())
 		})
@@ -540,11 +602,10 @@ var _ = Describe("CNA Operand", func() {
 				existingCNAO.Spec.KubeSecondaryDNS = &networkaddonsshared.KubeSecondaryDNS{}
 			}
 
-			kubeSecondaryDNSNameServerIP := "127.0.0.1"
+			const kubeSecondaryDNSNameServerIP = "127.0.0.1"
 			if o.setFeatureGate {
-				deployKubeSecondaryDNS := o.featureGateValue
-				hco.Spec.FeatureGates.DeployKubeSecondaryDNS = &deployKubeSecondaryDNS
-				hco.Spec.KubeSecondaryDNSNameServerIP = &kubeSecondaryDNSNameServerIP
+				hco.Spec.FeatureGates.DeployKubeSecondaryDNS = ptr.To(o.featureGateValue)
+				hco.Spec.KubeSecondaryDNSNameServerIP = ptr.To(kubeSecondaryDNSNameServerIP)
 			}
 
 			cl := commontestutils.InitClient([]client.Object{hco, existingCNAO})
@@ -796,8 +857,8 @@ var _ = Describe("CNA Operand", func() {
 				cna, err := NewNetworkAddons(hco)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(cna).ToNot(BeNil())
-				Expect(cna.Spec.KubeMacPool.RangeStart).Should(Equal("1.1.1.1.1.1"))
-				Expect(cna.Spec.KubeMacPool.RangeEnd).Should(Equal("5.5.5.5.5.5"))
+				Expect(cna.Spec.KubeMacPool.RangeStart).To(Equal("1.1.1.1.1.1"))
+				Expect(cna.Spec.KubeMacPool.RangeEnd).To(Equal("5.5.5.5.5.5"))
 				Expect(cna.Spec.ImagePullPolicy).To(BeEquivalentTo("Always"))
 			})
 
@@ -843,8 +904,8 @@ var _ = Describe("CNA Operand", func() {
 				).To(Succeed())
 
 				Expect(cna).ToNot(BeNil())
-				Expect(cna.Spec.KubeMacPool.RangeStart).Should(Equal("1.1.1.1.1.1"))
-				Expect(cna.Spec.KubeMacPool.RangeEnd).Should(Equal("5.5.5.5.5.5"))
+				Expect(cna.Spec.KubeMacPool.RangeStart).To(Equal("1.1.1.1.1.1"))
+				Expect(cna.Spec.KubeMacPool.RangeEnd).To(Equal("5.5.5.5.5.5"))
 				Expect(cna.Spec.ImagePullPolicy).To(BeEquivalentTo("Always"))
 			})
 
@@ -865,12 +926,10 @@ var _ = Describe("CNA Operand", func() {
 
 				cna := &networkaddonsv1.NetworkAddonsConfig{}
 
-				err := cl.Get(context.TODO(),
+				Expect(cl.Get(context.TODO(),
 					types.NamespacedName{Name: expectedResource.Name, Namespace: expectedResource.Namespace},
-					cna)
-
-				Expect(err).To(HaveOccurred())
-				Expect(errors.IsNotFound(err)).To(BeTrue())
+					cna,
+				)).To(MatchError(errors.IsNotFound, "not found error"))
 			})
 
 			It("Ensure func should update CNA object with changes from the annotation", func() {
@@ -907,8 +966,8 @@ var _ = Describe("CNA Operand", func() {
 						cna),
 				).To(Succeed())
 
-				Expect(cna.Spec.KubeMacPool.RangeStart).Should(Equal("1.1.1.1.1.1"))
-				Expect(cna.Spec.KubeMacPool.RangeEnd).Should(Equal("5.5.5.5.5.5"))
+				Expect(cna.Spec.KubeMacPool.RangeStart).To(Equal("1.1.1.1.1.1"))
+				Expect(cna.Spec.KubeMacPool.RangeEnd).To(Equal("5.5.5.5.5.5"))
 				Expect(cna.Spec.ImagePullPolicy).To(BeEquivalentTo("Always"))
 			})
 
@@ -960,12 +1019,12 @@ var _ = Describe("CNA Operand", func() {
 				Expect(handler.hooks.(*cnaHooks).cache).ToNot(BeNil())
 
 				By("compare pointers to make sure cache is working", func() {
-					Expect(handler.hooks.(*cnaHooks).cache).Should(BeIdenticalTo(cr))
+					Expect(handler.hooks.(*cnaHooks).cache).To(BeIdenticalTo(cr))
 
 					crII, err := handler.hooks.getFullCr(hco)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(crII).ToNot(BeNil())
-					Expect(cr).Should(BeIdenticalTo(crII))
+					Expect(cr).To(BeIdenticalTo(crII))
 				})
 			})
 
@@ -1077,12 +1136,11 @@ var _ = Describe("CNA Operand", func() {
 	})
 
 	Context("hcoConfig2CnaoPlacement", func() {
-		seconds1, seconds2 := int64(1), int64(2)
 		tolr1 := corev1.Toleration{
-			Key: "key1", Operator: "operator1", Value: "value1", Effect: "effect1", TolerationSeconds: &seconds1,
+			Key: "key1", Operator: "operator1", Value: "value1", Effect: "effect1", TolerationSeconds: ptr.To[int64](1),
 		}
 		tolr2 := corev1.Toleration{
-			Key: "key2", Operator: "operator2", Value: "value2", Effect: "effect2", TolerationSeconds: &seconds2,
+			Key: "key2", Operator: "operator2", Value: "value2", Effect: "effect2", TolerationSeconds: ptr.To[int64](2),
 		}
 
 		It("Should return nil if HCO's input is empty", func() {
@@ -1105,8 +1163,8 @@ var _ = Describe("CNA Operand", func() {
 			Expect(cnaoPlacement.Affinity.PodAffinity).To(BeNil())
 			Expect(cnaoPlacement.Affinity.PodAntiAffinity).To(BeNil())
 
-			Expect(cnaoPlacement.NodeSelector["key1"]).Should(Equal("value1"))
-			Expect(cnaoPlacement.NodeSelector["key2"]).Should(Equal("value2"))
+			Expect(cnaoPlacement.NodeSelector["key1"]).To(Equal("value1"))
+			Expect(cnaoPlacement.NodeSelector["key2"]).To(Equal("value2"))
 		})
 
 		It("Should return only Tolerations", func() {
@@ -1122,8 +1180,8 @@ var _ = Describe("CNA Operand", func() {
 			Expect(cnaoPlacement.Affinity.PodAffinity).To(BeNil())
 			Expect(cnaoPlacement.Affinity.PodAntiAffinity).To(BeNil())
 
-			Expect(cnaoPlacement.Tolerations[0]).Should(Equal(tolr1))
-			Expect(cnaoPlacement.Tolerations[1]).Should(Equal(tolr2))
+			Expect(cnaoPlacement.Tolerations[0]).To(Equal(tolr1))
+			Expect(cnaoPlacement.Tolerations[1]).To(Equal(tolr2))
 		})
 
 		It("Should return only Affinity", func() {
@@ -1157,7 +1215,7 @@ var _ = Describe("CNA Operand", func() {
 			Expect(cnaoPlacement.Affinity.PodAffinity).To(BeNil())
 			Expect(cnaoPlacement.Affinity.PodAntiAffinity).To(BeNil())
 
-			Expect(cnaoPlacement.Affinity.NodeAffinity).Should(Equal(affinity.NodeAffinity))
+			Expect(cnaoPlacement.Affinity.NodeAffinity).To(Equal(affinity.NodeAffinity))
 		})
 
 		It("Should return the whole object", func() {
@@ -1195,13 +1253,13 @@ var _ = Describe("CNA Operand", func() {
 			Expect(cnaoPlacement.Tolerations).ToNot(BeNil())
 			Expect(cnaoPlacement.Affinity.NodeAffinity).ToNot(BeNil())
 
-			Expect(cnaoPlacement.NodeSelector["key1"]).Should(Equal("value1"))
-			Expect(cnaoPlacement.NodeSelector["key2"]).Should(Equal("value2"))
+			Expect(cnaoPlacement.NodeSelector["key1"]).To(Equal("value1"))
+			Expect(cnaoPlacement.NodeSelector["key2"]).To(Equal("value2"))
 
-			Expect(cnaoPlacement.Tolerations[0]).Should(Equal(tolr1))
-			Expect(cnaoPlacement.Tolerations[1]).Should(Equal(tolr2))
+			Expect(cnaoPlacement.Tolerations[0]).To(Equal(tolr1))
+			Expect(cnaoPlacement.Tolerations[1]).To(Equal(tolr2))
 
-			Expect(cnaoPlacement.Affinity.NodeAffinity).Should(Equal(hcoConf.Affinity.NodeAffinity))
+			Expect(cnaoPlacement.Affinity.NodeAffinity).To(Equal(hcoConf.Affinity.NodeAffinity))
 		})
 	})
 })

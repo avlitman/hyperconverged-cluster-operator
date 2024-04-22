@@ -12,12 +12,20 @@ spec:
       duration: 24h0m0s
       renewBefore: 12h0m0s
   featureGates:
+    alignCPUs: false
+    autoResourceLimits: false
     deployKubeSecondaryDNS: false
     deployTektonTaskResources: false
+    deployVmConsoleProxy: false
     disableMDevConfiguration: false
+    enableApplicationAwareQuota: false
     enableCommonBootImageImport: true
+    enableManagedTenantQuota: false
+    nonRoot: true
     persistentReservation: false
     withHostPassthroughCPU: false
+  higherWorkloadDensity:
+    memoryOvercommitPercentage: 100
   infra: {}
   liveMigrationConfig:
     allowAutoConverge: false
@@ -27,6 +35,9 @@ spec:
     parallelOutboundMigrationsPerNode: 2
     progressTimeout: 150
   uninstallStrategy: BlockUninstallIfWorkloadsExist
+  virtualMachineOptions:
+    disableFreePageReporting: false
+    disableSerialConsoleLog: true
   workloadUpdateStrategy:
     batchEvictionInterval: 1m0s
     batchEvictionSize: 10

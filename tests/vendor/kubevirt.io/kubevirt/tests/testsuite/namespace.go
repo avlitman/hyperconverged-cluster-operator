@@ -170,6 +170,17 @@ func CleanNamespaces() {
 			Expect(err).ToNot(HaveOccurred())
 		}
 
+		// Remove all ResourceQuota
+		rqList, err := virtCli.CoreV1().ResourceQuotas(namespace).List(context.Background(), metav1.ListOptions{})
+		util.PanicOnError(err)
+		for _, rq := range rqList.Items {
+			err := virtCli.CoreV1().ResourceQuotas(namespace).Delete(context.Background(), rq.Name, metav1.DeleteOptions{})
+			if errors.IsNotFound(err) {
+				continue
+			}
+			Expect(err).ToNot(HaveOccurred())
+		}
+
 		// Remove PVCs
 		util.PanicOnError(virtCli.CoreV1().RESTClient().Delete().Namespace(namespace).Resource("persistentvolumeclaims").Do(context.Background()).Error())
 		if libstorage.HasCDI() {
@@ -270,6 +281,17 @@ func CleanNamespaces() {
 		}
 
 		util.PanicOnError(virtCli.VirtualMachineRestore(namespace).DeleteCollection(context.Background(), metav1.DeleteOptions{}, metav1.ListOptions{}))
+
+		// Remove events
+		util.PanicOnError(virtCli.CoreV1().Events(namespace).DeleteCollection(context.Background(), metav1.DeleteOptions{}, metav1.ListOptions{}))
+
+		// Remove vmexports
+		vmexportList, err := virtCli.VirtualMachineExport(namespace).List(context.Background(), metav1.ListOptions{})
+		util.PanicOnError(err)
+		for _, export := range vmexportList.Items {
+			util.PanicOnError(virtCli.VirtualMachineExport(namespace).Delete(context.Background(), export.Name, metav1.DeleteOptions{}))
+		}
+
 	}
 }
 

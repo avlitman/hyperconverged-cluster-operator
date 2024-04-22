@@ -8,25 +8,30 @@ import (
 	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "kubevirt.io/api/core/v1"
+	"kubevirt.io/client-go/kubecli"
 
 	tests "github.com/kubevirt/hyperconverged-cluster-operator/tests/func-tests"
-	"kubevirt.io/client-go/kubecli"
 )
 
-var _ = Describe("Cluster level evictionStrategy default value", func() {
+var _ = Describe("Cluster level evictionStrategy default value", Serial, Ordered, func() {
 	tests.FlagParse()
 	var cli kubecli.KubevirtClient
 	ctx := context.TODO()
 
-	cli, err := kubecli.GetKubevirtClient()
-	Expect(cli).ToNot(BeNil())
-	Expect(err).ToNot(HaveOccurred())
-	var initialEvictionStrategy *v1.EvictionStrategy
-
-	singleworkerCluster, err := isSingleWorkerCluster(cli)
-	Expect(err).ToNot(HaveOccurred())
+	var (
+		initialEvictionStrategy *v1.EvictionStrategy
+		singleworkerCluster     bool
+	)
 
 	BeforeEach(func() {
+		var err error
+		cli, err = kubecli.GetKubevirtClient()
+		Expect(cli).ToNot(BeNil())
+		Expect(err).ToNot(HaveOccurred())
+
+		singleworkerCluster, err = isSingleWorkerCluster(cli)
+		Expect(err).ToNot(HaveOccurred())
+
 		tests.BeforeEach()
 		hc := tests.GetHCO(ctx, cli)
 		initialEvictionStrategy = hc.Spec.EvictionStrategy
@@ -69,8 +74,6 @@ func isSingleWorkerCluster(cli kubecli.KubevirtClient) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if len(workerNodes.Items) == 1 {
-		return true, nil
-	}
-	return false, nil
+
+	return len(workerNodes.Items) == 1, nil
 }

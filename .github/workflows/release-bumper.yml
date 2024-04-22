@@ -18,7 +18,7 @@ jobs:
     outputs:
       matrix: ${{ steps.set_branches.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
@@ -37,13 +37,13 @@ jobs:
       matrix: ${{fromJson(needs.set_bump_branches.outputs.matrix)}}
       fail-fast: false
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{ matrix.branches.branch }}
 
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-go@v5
         with:
-          go-version: '1.19' # The Go version to download (if necessary) and use.
+          go-version: '1.21' # The Go version to download (if necessary) and use.
 
       - name: Check for new releases and update
         env:
@@ -74,7 +74,7 @@ jobs:
         if: ${{ env.CHANGED }}
         run: rm -f updated_component.txt updated_version.txt
 
-      - uses: peter-evans/create-pull-request@v3
+      - uses: peter-evans/create-pull-request@v6
         if: ${{ env.CHANGED }}
         with:
           token: ${{ secrets.HCO_BOT_TOKEN }}
@@ -90,7 +90,6 @@ jobs:
             ```release-note
             Bump ${{ env.UPDATED_COMPONENT }} to ${{ env.UPDATED_VERSION }}
             ```
-          assignees: tiraboschi,orenc1,nunnatsa
-          reviewers: tiraboschi,orenc1,nunnatsa
-          team-reviewers: owners, maintainers
+          assignees: tiraboschi,orenc1,nunnatsa,machadovilaca,dharmit
+          reviewers: tiraboschi,orenc1,nunnatsa,machadovilaca,dharmit
           branch: bump_${{ env.UPDATED_COMPONENT }}_${{ env.UPDATED_VERSION }}_${{ matrix.branches.branch }}

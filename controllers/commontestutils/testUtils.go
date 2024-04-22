@@ -7,6 +7,7 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2" //nolint dot-imports
 	. "github.com/onsi/gomega"    //nolint dot-imports
+	"github.com/onsi/gomega/gstruct"
 	gomegatypes "github.com/onsi/gomega/types"
 	openshiftconfigv1 "github.com/openshift/api/config/v1"
 	consolev1 "github.com/openshift/api/console/v1"
@@ -22,20 +23,23 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	networkaddonsv1 "github.com/kubevirt/cluster-network-addons-operator/pkg/apis/networkaddonsoperator/v1"
+	kubevirtcorev1 "kubevirt.io/api/core/v1"
+	aaqv1alpha1 "kubevirt.io/application-aware-quota/staging/src/kubevirt.io/application-aware-quota-api/pkg/apis/core/v1alpha1"
+	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
+	sdkapi "kubevirt.io/controller-lifecycle-operator-sdk/api"
+	mtqv1alpha1 "kubevirt.io/managed-tenant-quota/staging/src/kubevirt.io/managed-tenant-quota-api/pkg/apis/core/v1alpha1"
+	sspv1beta2 "kubevirt.io/ssp-operator/api/v1beta2"
+
 	"github.com/kubevirt/hyperconverged-cluster-operator/api"
 	hcov1beta1 "github.com/kubevirt/hyperconverged-cluster-operator/api/v1beta1"
 	"github.com/kubevirt/hyperconverged-cluster-operator/controllers/common"
 	"github.com/kubevirt/hyperconverged-cluster-operator/pkg/components"
-	kubevirtcorev1 "kubevirt.io/api/core/v1"
-	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
-	sdkapi "kubevirt.io/controller-lifecycle-operator-sdk/api"
-	sspv1beta2 "kubevirt.io/ssp-operator/api/v1beta2"
 )
 
 // Name and Namespace of our primary resource
@@ -159,6 +163,9 @@ func GetScheme() *runtime.Scheme {
 		consolev1.Install,
 		operatorv1.Install,
 		openshiftconfigv1.Install,
+		mtqv1alpha1.AddToScheme,
+		csvv1alpha1.AddToScheme,
+		aaqv1alpha1.AddToScheme,
 	} {
 		Expect(f(testScheme)).ToNot(HaveOccurred())
 	}
@@ -223,6 +230,9 @@ var ( // own resources
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      RSName,
 			Namespace: Namespace,
+			Annotations: map[string]string{
+				components.DisableOperandDeletionAnnotation: "true",
+			},
 		},
 	}
 
@@ -239,7 +249,7 @@ var ( // own resources
 					APIVersion: "operators.coreos.com/v1alpha1",
 					Kind:       csvv1alpha1.ClusterServiceVersionKind,
 					Name:       RSName,
-					Controller: pointer.Bool(true),
+					Controller: ptr.To(true),
 				},
 			},
 			UID: "1234567890",
@@ -259,7 +269,7 @@ var ( // own resources
 					APIVersion: "apps/v1",
 					Kind:       "ReplicaSet",
 					Name:       RSName,
-					Controller: pointer.Bool(true),
+					Controller: ptr.To(true),
 				},
 			},
 		},
@@ -294,6 +304,12 @@ func (ClusterInfoMock) GetBaseDomain() string {
 	return BaseDomain
 }
 func (c ClusterInfoMock) IsConsolePluginImageProvided() bool {
+	return true
+}
+func (c ClusterInfoMock) IsMonitoringAvailable() bool {
+	return true
+}
+func (c ClusterInfoMock) IsSingleStackIPv6() bool {
 	return true
 }
 func (c ClusterInfoMock) GetPod() *corev1.Pod {
@@ -364,8 +380,13 @@ func (ClusterInfoSNOMock) GetTLSSecurityProfile(_ *openshiftconfigv1.TLSSecurity
 func (ClusterInfoSNOMock) RefreshAPIServerCR(_ context.Context, _ client.Client) error {
 	return nil
 }
-
 func (ClusterInfoSNOMock) IsConsolePluginImageProvided() bool {
+	return true
+}
+func (c ClusterInfoSNOMock) IsMonitoringAvailable() bool {
+	return true
+}
+func (c ClusterInfoSNOMock) IsSingleStackIPv6() bool {
 	return true
 }
 
@@ -410,6 +431,12 @@ func (ClusterInfoSRCPHAIMock) GetBaseDomain() string {
 func (ClusterInfoSRCPHAIMock) IsConsolePluginImageProvided() bool {
 	return true
 }
+func (ClusterInfoSRCPHAIMock) IsMonitoringAvailable() bool {
+	return true
+}
+func (m ClusterInfoSRCPHAIMock) IsSingleStackIPv6() bool {
+	return true
+}
 func (ClusterInfoSRCPHAIMock) GetTLSSecurityProfile(_ *openshiftconfigv1.TLSSecurityProfile) *openshiftconfigv1.TLSSecurityProfile {
 	return &openshiftconfigv1.TLSSecurityProfile{
 		Type:         openshiftconfigv1.TLSProfileIntermediateType,
@@ -418,4 +445,12 @@ func (ClusterInfoSRCPHAIMock) GetTLSSecurityProfile(_ *openshiftconfigv1.TLSSecu
 }
 func (ClusterInfoSRCPHAIMock) RefreshAPIServerCR(_ context.Context, _ client.Client) error {
 	return nil
+}
+
+func KeysFromSSMap(ssmap map[string]string) gstruct.Keys {
+	keys := gstruct.Keys{}
+	for k, v := range ssmap {
+		keys[k] = Equal(v)
+	}
+	return keys
 }

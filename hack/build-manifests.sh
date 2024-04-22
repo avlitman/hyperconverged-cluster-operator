@@ -41,7 +41,7 @@ source "${PROJECT_ROOT}"/deploy/images.env
 HCO_OPERATOR_IMAGE=${HCO_OPERATOR_IMAGE:-quay.io/kubevirt/hyperconverged-cluster-operator:${CSV_VERSION}-unstable}
 HCO_WEBHOOK_IMAGE=${HCO_WEBHOOK_IMAGE:-quay.io/kubevirt/hyperconverged-cluster-webhook:${CSV_VERSION}-unstable}
 HCO_DOWNLOADS_IMAGE=${HCO_DOWNLOADS_IMAGE:-quay.io/kubevirt/virt-artifacts-server:${CSV_VERSION}-unstable}
-DIGEST_LIST="${DIGEST_LIST},${HCO_OPERATOR_IMAGE}|hyperconverged-cluster-operator,${HCO_WEBHOOK_IMAGE}|hyperconverged-cluster-webhook"
+DIGEST_LIST="${DIGEST_LIST},${HCO_OPERATOR_IMAGE}|hyperconverged-cluster-operator,${HCO_WEBHOOK_IMAGE}|hyperconverged-cluster-webhook,${HCO_DOWNLOADS_IMAGE}|virt-artifacts-server"
 
 DEPLOY_DIR="${PROJECT_ROOT}/deploy"
 CRD_DIR="${DEPLOY_DIR}/crds"
@@ -147,6 +147,7 @@ function create_ssp_csv() {
     --csv-version=${CSV_VERSION} \
     --operator-image=${SSP_OPERATOR_IMAGE} \
     --operator-version=${SSP_VERSION} \
+    --validator-image=${SSP_VALIDATOR_IMAGE} \
   "
 
   gen_csv ${SSP_CSV_GENERATOR} ${operatorName} "${SSP_OPERATOR_IMAGE}" ${dumpCRDsArg} ${operatorArgs}
@@ -194,6 +195,40 @@ function create_hpp_csv() {
   echo "${operatorName}"
 }
 
+function create_mtq_csv() {
+  local operatorName="managed-tenant-quota"
+  local dumpCRDsArg="--dump-crds"
+  local operatorArgs=" \
+    --csv-version=${CSV_VERSION} \
+    --operator-image=${MTQ_OPERATOR_IMAGE} \
+    --controller-image=${MTQ_CONTROLLER_IMAGE} \
+    --mtq-lock-server-image=${MTQ_LOCKSERVER_IMAGE} \
+    --operator-version=${MTQ_VERSION} \
+    --namespace=${OPERATOR_NAMESPACE} \
+    --pull-policy=IfNotPresent \
+  "
+
+  gen_csv ${DEFAULT_CSV_GENERATOR} ${operatorName} "${MTQ_OPERATOR_IMAGE}" ${dumpCRDsArg} ${operatorArgs}
+  echo "${operatorName}"
+}
+
+function create_aaq_csv() {
+  local operatorName="application-aware-quota"
+  local dumpCRDsArg="--dump-crds"
+  local operatorArgs=" \
+    --csv-version=${CSV_VERSION} \
+    --operator-image=${AAQ_OPERATOR_IMAGE} \
+    --controller-image=${AAQ_CONTROLLER_IMAGE} \
+    --aaq-server-image=${AAQ_SERVER_IMAGE} \
+    --operator-version=${AAQ_VERSION} \
+    --namespace=${OPERATOR_NAMESPACE} \
+    --pull-policy=IfNotPresent \
+  "
+
+  gen_csv ${DEFAULT_CSV_GENERATOR} ${operatorName} "${AAQ_OPERATOR_IMAGE}" ${dumpCRDsArg} ${operatorArgs}
+  echo "${operatorName}"
+}
+
 TEMPDIR=$(mktemp -d) || (echo "Failed to create temp directory" && exit 1)
 pushd $TEMPDIR
 virtFile=$(create_virt_csv)
@@ -206,6 +241,10 @@ cdiFile=$(create_cdi_csv)
 cdiCsv="${TEMPDIR}/${cdiFile}.${CSV_EXT}"
 hppFile=$(create_hpp_csv)
 hppCsv="${TEMPDIR}/${hppFile}.${CSV_EXT}"
+mtqFile=$(create_mtq_csv)
+mtqCsv="${TEMPDIR}/${mtqFile}.${CSV_EXT}"
+aaqFile=$(create_aaq_csv)
+aaqCsv="${TEMPDIR}/${aaqFile}.${CSV_EXT}"
 csvOverrides="${TEMPDIR}/csv_overrides.${CSV_EXT}"
 keywords="  keywords:
   - KubeVirt
@@ -252,9 +291,9 @@ EOM
 )
 
 # validate CSVs. Make sure each one of them contain an image (and so, also not empty):
-csvs=("${cnaCsv}" "${virtCsv}" "${sspCsv}" "${cdiCsv}" "${hppCsv}")
+csvs=("${cnaCsv}" "${virtCsv}" "${sspCsv}" "${cdiCsv}" "${hppCsv}" "${mtqCsv}" "${aaqCsv}")
 for csv in "${csvs[@]}"; do
-  grep -E "^ *image: [a-zA-Z0-9/\.:@\-]+$" ${csv}
+  grep -E "^ *image: [_a-zA-Z0-9/\.:@\-]+$" ${csv}
 done
 
 # Build and write deploy dir
@@ -266,6 +305,8 @@ ${PROJECT_ROOT}/tools/manifest-templator/manifest-templator \
   --ssp-csv="$(<${sspCsv})" \
   --cdi-csv="$(<${cdiCsv})" \
   --hpp-csv="$(<${hppCsv})" \
+  --mtq-csv="$(<${mtqCsv})" \
+  --aaq-csv="$(<${aaqCsv})" \
   --kv-virtiowin-image-name="${KUBEVIRT_VIRTIO_IMAGE}" \
   --operator-namespace="${OPERATOR_NAMESPACE}" \
   --smbios="${SMBIOS}" \
@@ -275,6 +316,8 @@ ${PROJECT_ROOT}/tools/manifest-templator/manifest-templator \
   --cnao-version="${NETWORK_ADDONS_VERSION}" \
   --ssp-version="${SSP_VERSION}" \
   --hppo-version="${HPPO_VERSION}" \
+  --mtq-version="${MTQ_VERSION}" \
+  --aaq-version="${AAQ_VERSION}" \
   --operator-image="${HCO_OPERATOR_IMAGE}" \
   --webhook-image="${HCO_WEBHOOK_IMAGE}" \
   --cli-downloads-image="${HCO_DOWNLOADS_IMAGE}"
@@ -297,6 +340,8 @@ ${PROJECT_ROOT}/tools/csv-merger/csv-merger \
   --ssp-csv="$(<${sspCsv})" \
   --cdi-csv="$(<${cdiCsv})" \
   --hpp-csv="$(<${hppCsv})" \
+  --mtq-csv="$(<${mtqCsv})" \
+  --aaq-csv="$(<${aaqCsv})" \
   --kv-virtiowin-image-name="${KUBEVIRT_VIRTIO_IMAGE}" \
   --csv-version=${CSV_VERSION_PARAM} \
   --replaces-csv-version=${REPLACES_CSV_VERSION} \
@@ -313,10 +358,13 @@ ${PROJECT_ROOT}/tools/csv-merger/csv-merger \
   --cnao-version="${NETWORK_ADDONS_VERSION}" \
   --ssp-version="${SSP_VERSION}" \
   --hppo-version="${HPPO_VERSION}" \
+  --mtq-version="${MTQ_VERSION}" \
+  --aaq-version="${AAQ_VERSION}" \
   --related-images-list="${DIGEST_LIST}" \
   --operator-image-name="${HCO_OPERATOR_IMAGE}" \
   --webhook-image-name="${HCO_WEBHOOK_IMAGE}" \
   --kubevirt-consoleplugin-image-name="${KUBEVIRT_CONSOLE_PLUGIN_IMAGE}" \
+  --kubevirt-consoleproxy-image-name="${KUBEVIRT_CONSOLE_PROXY_IMAGE}" \
   --cli-downloads-image-name="${HCO_DOWNLOADS_IMAGE}" > "${CSV_DIR}/${OPERATOR_NAME}.v${CSV_VERSION}.${CSV_EXT}"
 
 rendered_csv="$(cat "${CSV_DIR}/${OPERATOR_NAME}.v${CSV_VERSION}.${CSV_EXT}")"
@@ -346,11 +394,13 @@ fi
 # Intentionally removing last so failure leaves around the templates
 rm -rf ${TEMPDIR}
 
-# If the only change in the CSV file is its "created_at" field, rollback this change as it causes git conflicts for
-# no good reason.
 CSV_FILE="${CSV_DIR}/kubevirt-hyperconverged-operator.v${CSV_VERSION}.${CSV_EXT}"
-if git difftool -y --trust-exit-code --extcmd=./hack/diff-csv.sh ${CSV_FILE}; then
-  git checkout ${CSV_FILE}
+if git ls-files --error-unmatch "${CSV_FILE}"; then
+  # If the only change in the CSV file is its "created_at" field, rollback this change as it causes git conflicts for
+  # no good reason.
+  if git difftool -y --trust-exit-code --extcmd=./hack/diff-csv.sh ${CSV_FILE}; then
+    git checkout ${CSV_FILE}
+  fi
 fi
 
 # Prepare files for index-image files that will be used for testing in openshift CI

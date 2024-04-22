@@ -1,12 +1,12 @@
 package v1beta1
 
 import (
+	openshiftconfigv1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	openshiftconfigv1 "github.com/openshift/api/config/v1"
-
 	v1 "kubevirt.io/api/core/v1"
+	aaqv1alpha1 "kubevirt.io/application-aware-quota/staging/src/kubevirt.io/application-aware-quota-api/pkg/apis/core/v1alpha1"
 	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	sdkapi "kubevirt.io/controller-lifecycle-operator-sdk/api"
 )
@@ -66,7 +66,7 @@ type HyperConvergedSpec struct {
 
 	// featureGates is a map of feature gate flags. Setting a flag to `true` will enable
 	// the feature. Setting `false` or removing the feature gate, disables the feature.
-	// +kubebuilder:default={"withHostPassthroughCPU": false, "enableCommonBootImageImport": true, "deployTektonTaskResources": false, "deployKubeSecondaryDNS": false}
+	// +kubebuilder:default={"withHostPassthroughCPU": false, "enableCommonBootImageImport": true, "deployTektonTaskResources": false, "deployVmConsoleProxy": false, "deployKubeSecondaryDNS": false, "nonRoot": true, "disableMDevConfiguration": false, "persistentReservation": false, "enableManagedTenantQuota": false,"autoResourceLimits": false, "enableApplicationAwareQuota": false}
 	// +optional
 	FeatureGates HyperConvergedFeatureGates `json:"featureGates,omitempty"`
 
@@ -90,6 +90,8 @@ type HyperConvergedSpec struct {
 	CertConfig HyperConvergedCertConfig `json:"certConfig,omitempty"`
 
 	// ResourceRequirements describes the resource requirements for the operand workloads.
+	// +kubebuilder:default={"vmiCPUAllocationRatio": 10}
+	// +kubebuilder:validation:XValidation:rule="!has(self.vmiCPUAllocationRatio) || self.vmiCPUAllocationRatio != 1",message="Automatic CPU limits are incompatible with a VMI CPU allocation ratio of 1"
 	// +optional
 	ResourceRequirements *OperandResourceRequirements `json:"resourceRequirements,omitempty"`
 
@@ -102,6 +104,8 @@ type HyperConvergedSpec struct {
 	ScratchSpaceStorageClass *string `json:"scratchSpaceStorageClass,omitempty"`
 
 	// VDDK Init Image eventually used to import VMs from external providers
+	//
+	// Deprecated: please use the Migration Toolkit for Virtualization
 	// +optional
 	VddkInitImage *string `json:"vddkInitImage,omitempty"`
 
@@ -186,8 +190,14 @@ type HyperConvergedSpec struct {
 
 	// EvictionStrategy defines at the cluster level if the VirtualMachineInstance should be
 	// migrated instead of shut-off in case of a node drain. If the VirtualMachineInstance specific
-	// field is set it overrides the cluster level one. Defaults to LiveMigrate with multiple worker nodes, None on single worker clusters.
-	// +kubebuilder:validation:Enum=None;LiveMigrate;External
+	// field is set it overrides the cluster level one.
+	// Allowed values:
+	// - `None` no eviction strategy at cluster level.
+	// - `LiveMigrate` migrate the VM on eviction; a not live migratable VM with no specific strategy will block the drain of the node util manually evicted.
+	// - `LiveMigrateIfPossible` migrate the VM on eviction if live migration is possible, otherwise directly evict.
+	// - `External` block the drain, track eviction and notify an external controller.
+	// Defaults to LiveMigrate with multiple worker nodes, None on single worker clusters.
+	// +kubebuilder:validation:Enum=None;LiveMigrate;LiveMigrateIfPossible;External
 	// +optional
 	EvictionStrategy *v1.EvictionStrategy `json:"evictionStrategy,omitempty"`
 
@@ -195,6 +205,40 @@ type HyperConvergedSpec struct {
 	// The storage class must support RWX in filesystem mode.
 	// +optional
 	VMStateStorageClass *string `json:"vmStateStorageClass,omitempty"`
+
+	// VirtualMachineOptions holds the cluster level information regarding the virtual machine.
+	// +kubebuilder:default={"disableFreePageReporting": false, "disableSerialConsoleLog": true}
+	// +default={"disableFreePageReporting": false, "disableSerialConsoleLog": true}
+	// +optional
+	VirtualMachineOptions *VirtualMachineOptions `json:"virtualMachineOptions,omitempty"`
+
+	// CommonBootImageNamespace override the default namespace of the common boot images, in order to hide them.
+	//
+	// If not set, HCO won't set any namespace, letting SSP to use the default. If set, use the namespace to create the
+	// DataImportCronTemplates and the common image streams, with this namespace. This field is not set by default.
+	//
+	// +optional
+	CommonBootImageNamespace *string `json:"commonBootImageNamespace,omitempty"`
+
+	// KSMConfiguration holds the information regarding
+	// the enabling the KSM in the nodes (if available).
+	// +optional
+	KSMConfiguration *v1.KSMConfiguration `json:"ksmConfiguration,omitempty"`
+
+	// NetworkBinding defines the network binding plugins.
+	// Those bindings can be used when defining virtual machine interfaces.
+	// +optional
+	NetworkBinding map[string]v1.InterfaceBindingPlugin `json:"networkBinding,omitempty"`
+
+	// ApplicationAwareConfig set the AAQ configurations
+	// +optional
+	ApplicationAwareConfig *ApplicationAwareConfigurations `json:"applicationAwareConfig,omitempty"`
+
+	// HigherWorkloadDensity holds configurataion aimed to increase virtual machine density
+	// +kubebuilder:default={"memoryOvercommitPercentage": 100}
+	// +default={"memoryOvercommitPercentage": 100}
+	// +optional
+	HigherWorkloadDensity *HigherWorkloadDensityConfiguration `json:"higherWorkloadDensity,omitempty"`
 }
 
 // CertRotateConfigCA contains the tunables for TLS certificates.
@@ -274,15 +318,21 @@ type LiveMigrationConfigurations struct {
 	// +default=2
 	ParallelOutboundMigrationsPerNode *uint32 `json:"parallelOutboundMigrationsPerNode,omitempty"`
 
-	// Bandwidth limit of each migration, in MiB/s.
+	// Bandwidth limit of each migration, the value is quantity of bytes per second (e.g. 2048Mi = 2048MiB/sec)
 	// +optional
 	// +kubebuilder:validation:Pattern=^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
 	BandwidthPerMigration *string `json:"bandwidthPerMigration,omitempty"`
 
-	// The migration will be canceled if it has not completed in this time, in seconds per GiB
-	// of memory. For example, a virtual machine instance with 6GiB memory will timeout if it has not completed
-	// migration in 4800 seconds. If the Migration Method is BlockMigration, the size of the migrating disks is included
-	// in the calculation.
+	// If a migrating VM is big and busy, while the connection to the destination node
+	// is slow, migration may never converge. The completion timeout is calculated
+	// based on completionTimeoutPerGiB times the size of the guest (both RAM and
+	// migrated disks, if any). For example, with completionTimeoutPerGiB set to 800,
+	// a virtual machine instance with 6GiB memory will timeout if it has not
+	// completed migration in 1h20m. Use a lower completionTimeoutPerGiB to induce
+	// quicker failure, so that another destination or post-copy is attempted. Use a
+	// higher completionTimeoutPerGiB to let workload with spikes in its memory dirty
+	// rate to converge.
+	// The format is a number.
 	// +kubebuilder:default=800
 	// +default=800
 	// +optional
@@ -305,21 +355,48 @@ type LiveMigrationConfigurations struct {
 	// +default=false
 	AllowAutoConverge *bool `json:"allowAutoConverge,omitempty"`
 
-	// AllowPostCopy enables post-copy live migrations. Such migrations allow even the busiest VMIs
-	// to successfully live-migrate. However, events like a network failure can cause a VMI crash.
-	// If set to true, migrations will still start in pre-copy, but switch to post-copy when
-	// CompletionTimeoutPerGiB triggers. Defaults to false
+	// When enabled, KubeVirt attempts to use post-copy live-migration in case it
+	// reaches its completion timeout while attempting pre-copy live-migration.
+	// Post-copy migrations allow even the busiest VMs to successfully live-migrate.
+	// However, events like a network failure or a failure in any of the source or
+	// destination nodes can cause the migrated VM to crash or reach inconsistency.
+	// Enable this option when evicting nodes is more important than keeping VMs
+	// alive.
+	// Defaults to false.
 	// +optional
 	// +kubebuilder:default=false
 	// +default=false
 	AllowPostCopy *bool `json:"allowPostCopy,omitempty"`
 }
 
+// VirtualMachineOptions holds the cluster level information regarding the virtual machine.
+type VirtualMachineOptions struct {
+	// DisableFreePageReporting disable the free page reporting of
+	// memory balloon device https://libvirt.org/formatdomain.html#memory-balloon-device.
+	// This will have effect only if AutoattachMemBalloon is not false and the vmi is not
+	// requesting any high performance feature (dedicatedCPU/realtime/hugePages), in which free page reporting is always disabled.
+	// +optional
+	// +kubebuilder:default=false
+	// +default=false
+	DisableFreePageReporting *bool `json:"disableFreePageReporting,omitempty"`
+
+	// DisableSerialConsoleLog disables logging the auto-attached default serial console.
+	// If not set, serial console logs will be written to a file and then streamed from a container named `guest-console-log`.
+	// The value can be individually overridden for each VM, not relevant if AutoattachSerialConsole is disabled for the VM.
+	// +optional
+	// +kubebuilder:default=true
+	// +default=true
+	DisableSerialConsoleLog *bool `json:"disableSerialConsoleLog,omitempty"`
+}
+
 // HyperConvergedFeatureGates is a set of optional feature gates to enable or disable new features that are not enabled
 // by default yet.
 // +k8s:openapi-gen=true
-// +kubebuilder:validation:XValidation:rule="!has(self.nonRoot) || !has(self.root) || self.root == !self.nonRoot",message="nonRoot FG is deprecated, please use root FG with opposite logic"
 type HyperConvergedFeatureGates struct {
+	// Allow to expose a limited set of host metrics to guests.
+	// +optional
+	DownwardMetrics *bool `json:"downwardMetrics,omitempty"`
+
 	// Allow migrating a virtual machine with CPU host-passthrough mode. This should be
 	// enabled only when the Cluster is homogeneous from CPU HW perspective doc here
 	// +optional
@@ -342,6 +419,12 @@ type HyperConvergedFeatureGates struct {
 	// +default=false
 	DeployTektonTaskResources *bool `json:"deployTektonTaskResources,omitempty"`
 
+	// deploy VM console proxy resources in SSP operator
+	// +optional
+	// +kubebuilder:default=false
+	// +default=false
+	DeployVMConsoleProxy *bool `json:"deployVmConsoleProxy,omitempty"`
+
 	// Deploy KubeSecondaryDNS by CNAO
 	// +optional
 	// +kubebuilder:default=false
@@ -354,17 +437,9 @@ type HyperConvergedFeatureGates struct {
 	//
 	// Deprecated: please use the root FG.
 	// +optional
+	// +kubebuilder:default=true
+	// +default=true
 	NonRoot *bool `json:"nonRoot,omitempty"`
-
-	// TODO: skipping any default on root here to avoid any
-	// conflict during CRD updates.
-	// The default will be set by a mutating webhook.
-	// Enable back a default here when we can finally get rid of
-	// NonRoot
-
-	// Enable root virt-launcher (default: false).
-	// +optional
-	Root *bool `json:"root,omitempty"`
 
 	// Disable mediated devices handling on KubeVirt
 	// +optional
@@ -380,6 +455,41 @@ type HyperConvergedFeatureGates struct {
 	// +kubebuilder:default=false
 	// +default=false
 	PersistentReservation *bool `json:"persistentReservation,omitempty"`
+
+	// Enable the Managed Tenant Quota operator (MTQ) on the cluster.
+	// MTQ streamlines the VirtualMachines migration process in namespaces where resource quotas are applied.
+	// Note: this feature is in Developer Preview.
+	// +optional
+	// +kubebuilder:default=false
+	// +default=false
+	EnableManagedTenantQuota *bool `json:"enableManagedTenantQuota,omitempty"`
+
+	// TODO update description to also include cpu limits as well, after 4.14
+
+	// Enable KubeVirt to set automatic limits when they are needed.
+	// If ResourceQuota with set memory limits is associated with a namespace, each pod in that namespace must have memory limits set.
+	// By default, KubeVirt does not set such limits to the virt-launcher pod.
+	// When this feature gate is enabled, KubeVirt will set limits to the virt-launcher pod if they are not set manually
+	// and if a resource quota with memory limits is associated with the creation namespace.
+	// Note: this feature is in Developer Preview.
+	// +optional
+	// +kubebuilder:default=false
+	// +default=false
+	AutoResourceLimits *bool `json:"autoResourceLimits,omitempty"`
+
+	// Enable KubeVirt to request up to two additional dedicated CPUs
+	// in order to complete the total CPU count to an even parity when using emulator thread isolation.
+	// Note: this feature is in Developer Preview.
+	// +optional
+	// +kubebuilder:default=false
+	// +default=false
+	AlignCPUs *bool `json:"alignCPUs,omitempty"`
+
+	// EnableApplicationAwareQuota if true, enables the Application Aware Quota feature
+	// +optional
+	// +kubebuilder:default=false
+	// +default=false
+	EnableApplicationAwareQuota *bool `json:"enableApplicationAwareQuota,omitempty"`
 }
 
 // PermittedHostDevices holds information about devices allowed for passthrough
@@ -427,9 +537,17 @@ type MediatedHostDevice struct {
 
 // MediatedDevicesConfiguration holds information about MDEV types to be defined, if available
 // +k8s:openapi-gen=true
+// +kubebuilder:validation:XValidation:rule="(has(self.mediatedDeviceTypes) && size(self.mediatedDeviceTypes)>0) || (has(self.mediatedDevicesTypes) && size(self.mediatedDevicesTypes)>0)",message="for mediatedDevicesConfiguration a non-empty mediatedDeviceTypes or mediatedDevicesTypes(deprecated) is required"
 type MediatedDevicesConfiguration struct {
+	// +optional
+	// +listType=atomic
+	MediatedDeviceTypes []string `json:"mediatedDeviceTypes"`
+
+	// Deprecated: please use mediatedDeviceTypes instead.
+	// +optional
 	// +listType=atomic
 	MediatedDevicesTypes []string `json:"mediatedDevicesTypes,omitempty"`
+
 	// +optional
 	// +listType=atomic
 	NodeMediatedDeviceTypes []NodeMediatedDeviceTypesConfig `json:"nodeMediatedDeviceTypes,omitempty"`
@@ -437,12 +555,21 @@ type MediatedDevicesConfiguration struct {
 
 // NodeMediatedDeviceTypesConfig holds information about MDEV types to be defined in a specific node that matches the NodeSelector field.
 // +k8s:openapi-gen=true
+// +kubebuilder:validation:XValidation:rule="(has(self.mediatedDeviceTypes) && size(self.mediatedDeviceTypes)>0) || (has(self.mediatedDevicesTypes) && size(self.mediatedDevicesTypes)>0)",message="for nodeMediatedDeviceTypes a non-empty mediatedDeviceTypes or mediatedDevicesTypes(deprecated) is required"
 type NodeMediatedDeviceTypesConfig struct {
+
 	// NodeSelector is a selector which must be true for the vmi to fit on a node.
 	// Selector which must match a node's labels for the vmi to be scheduled on that node.
 	// More info: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/
 	NodeSelector map[string]string `json:"nodeSelector"`
+
 	// +listType=atomic
+	// +optional
+	MediatedDeviceTypes []string `json:"mediatedDeviceTypes"`
+
+	// Deprecated: please use mediatedDeviceTypes instead.
+	// +listType=atomic
+	// +optional
 	MediatedDevicesTypes []string `json:"mediatedDevicesTypes"`
 }
 
@@ -453,6 +580,29 @@ type OperandResourceRequirements struct {
 	// resource
 	// +optional
 	StorageWorkloads *corev1.ResourceRequirements `json:"storageWorkloads,omitempty"`
+
+	// VmiCPUAllocationRatio defines, for each requested virtual CPU,
+	// how much physical CPU to request per VMI from the
+	// hosting node. The value is in fraction of a CPU thread (or
+	// core on non-hyperthreaded nodes).
+	// VMI POD CPU request = number of vCPUs * 1/vmiCPUAllocationRatio
+	// For example, a value of 1 means 1 physical CPU thread per VMI CPU thread.
+	// A value of 100 would be 1% of a physical thread allocated for each
+	// requested VMI thread.
+	// This option has no effect on VMIs that request dedicated CPUs.
+	// Defaults to 10
+	// +kubebuilder:default=10
+	// +kubebuilder:validation:Minimum=1
+	// +default=10
+	// +optional
+	VmiCPUAllocationRatio *int `json:"vmiCPUAllocationRatio,omitempty"`
+
+	// When set, AutoCPULimitNamespaceLabelSelector will set a CPU limit on virt-launcher for VMIs running inside
+	// namespaces that match the label selector.
+	// The CPU limit will equal the number of requested vCPUs.
+	// This setting does not apply to VMIs with dedicated CPUs.
+	// +optional
+	AutoCPULimitNamespaceLabelSelector *metav1.LabelSelector `json:"autoCPULimitNamespaceLabelSelector,omitempty"`
 }
 
 // HyperConvergedObsoleteCPUs allows avoiding scheduling of VMs for obsolete CPU models
@@ -566,8 +716,14 @@ type Version struct {
 // LogVerbosityConfiguration configures log verbosity for different components
 // +k8s:openapi-gen=true
 type LogVerbosityConfiguration struct {
+	// Kubevirt is a struct that allows specifying the log verbosity level that controls the amount of information
+	// logged for each Kubevirt component.
 	// +optional
 	Kubevirt *v1.LogVerbosity `json:"kubevirt,omitempty"`
+
+	// CDI indicates the log verbosity level that controls the amount of information logged for CDI components.
+	// +optional
+	CDI *int32 `json:"cdi,omitempty"`
 }
 
 // DataImportCronStatus is the status field of the DIC template
@@ -592,6 +748,35 @@ type DataImportCronTemplateStatus struct {
 	DataImportCronTemplate `json:",inline"`
 
 	Status DataImportCronStatus `json:"status,omitempty"`
+}
+
+// ApplicationAwareConfigurations holds the AAQ configurations
+// +k8s:openapi-gen=true
+type ApplicationAwareConfigurations struct {
+	// VmiCalcConfigName determine how resource allocation will be done with ApplicationsResourceQuota.
+	// allowed values are: VmiPodUsage, VirtualResources, DedicatedVirtualResources or IgnoreVmiCalculator
+	// +kubebuilder:validation:Enum=VmiPodUsage;VirtualResources;DedicatedVirtualResources;IgnoreVmiCalculator
+	// +kubebuilder:default=DedicatedVirtualResources
+	VmiCalcConfigName *aaqv1alpha1.VmiCalcConfigName `json:"vmiCalcConfigName,omitempty"`
+
+	// NamespaceSelector determines in which namespaces scheduling gate will be added to pods..
+	NamespaceSelector *metav1.LabelSelector `json:"namespaceSelector,omitempty"`
+
+	// AllowApplicationAwareClusterResourceQuota if set to true, allows creation and management of ClusterAppsResourceQuota
+	// +kubebuilder:default=false
+	AllowApplicationAwareClusterResourceQuota bool `json:"allowApplicationAwareClusterResourceQuota,omitempty"`
+}
+
+// HigherWorkloadDensity holds configurataion aimed to increase virtual machine density
+type HigherWorkloadDensityConfiguration struct {
+	// MemoryOvercommitPercentage is the percentage of memory we want to give VMIs compared to the amount
+	// given to its parent pod (virt-launcher). For example, a value of 102 means the VMI will
+	// "see" 2% more memory than its parent pod. Values under 100 are effectively "undercommits".
+	// Overcommits can lead to memory exhaustion, which in turn can lead to crashes. Use carefully.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:default=100
+	// +default=100
+	MemoryOvercommitPercentage int `json:"memoryOvercommitPercentage,omitempty"`
 }
 
 const (
@@ -634,7 +819,7 @@ type HyperConverged struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	// +kubebuilder:default={"certConfig": {"ca": {"duration": "48h0m0s", "renewBefore": "24h0m0s"}, "server": {"duration": "24h0m0s", "renewBefore": "12h0m0s"}}, "featureGates": {"withHostPassthroughCPU": false, "enableCommonBootImageImport": true, "deployTektonTaskResources": false, "deployKubeSecondaryDNS": false}, "liveMigrationConfig": {"completionTimeoutPerGiB": 800, "parallelMigrationsPerCluster": 5, "parallelOutboundMigrationsPerNode": 2, "progressTimeout": 150, "allowAutoConverge": false, "allowPostCopy": false}, "uninstallStrategy": "BlockUninstallIfWorkloadsExist"}
+	// +kubebuilder:default={"certConfig": {"ca": {"duration": "48h0m0s", "renewBefore": "24h0m0s"}, "server": {"duration": "24h0m0s", "renewBefore": "12h0m0s"}},"featureGates": {"withHostPassthroughCPU": false, "enableCommonBootImageImport": true, "deployTektonTaskResources": false, "deployVmConsoleProxy": false, "deployKubeSecondaryDNS": false, "nonRoot": true, "disableMDevConfiguration": false, "persistentReservation": false, "enableManagedTenantQuota": false, "autoResourceLimits": false, "enableApplicationAwareQuota": false}, "liveMigrationConfig": {"completionTimeoutPerGiB": 800, "parallelMigrationsPerCluster": 5, "parallelOutboundMigrationsPerNode": 2, "progressTimeout": 150, "allowAutoConverge": false, "allowPostCopy": false}, "resourceRequirements": {"vmiCPUAllocationRatio": 10}, "uninstallStrategy": "BlockUninstallIfWorkloadsExist", "virtualMachineOptions": {"disableFreePageReporting": false, "disableSerialConsoleLog": true}}
 	// +optional
 	Spec   HyperConvergedSpec   `json:"spec,omitempty"`
 	Status HyperConvergedStatus `json:"status,omitempty"`

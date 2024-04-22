@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	jsonpatch "github.com/evanphx/json-patch"
+	jsonpatch "github.com/evanphx/json-patch/v5"
 	conditionsv1 "github.com/openshift/custom-resource-status/conditions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,7 +23,7 @@ import (
 
 type Operand interface {
 	ensure(req *common.HcoRequest) *EnsureResult
-	reset()
+	reseter
 }
 
 // Handles a specific resource (a CR, a configMap and so on), to be run during reconciliation
@@ -44,7 +44,7 @@ type hcoResourceHooks interface {
 	// Generate the required resource, with all the required fields)
 	getFullCr(*hcov1beta1.HyperConverged) (client.Object, error)
 	// Generate an empty resource, to be used as the input of the client.Get method. After calling this method, it will
-	// contains the actual values in K8s.
+	// contain the actual values in K8s.
 	getEmptyCr() client.Object
 	// check if there is a change between the required resource and the resource read from K8s, and update K8s accordingly.
 	updateCr(*common.HcoRequest, client.Client, runtime.Object, runtime.Object) (bool, bool, error)

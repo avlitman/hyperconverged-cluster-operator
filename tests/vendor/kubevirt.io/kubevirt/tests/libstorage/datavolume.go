@@ -145,10 +145,10 @@ func DeleteDataVolume(dv **v1beta1.DataVolume) {
 		return
 	}
 	if err != nil {
-		Expect(errors.IsNotFound(err)).To(BeTrue())
+		Expect(err).To(MatchError(errors.IsNotFound, "k8serrors.IsNotFound"))
 	}
 	if err = virtCli.CoreV1().PersistentVolumeClaims((*dv).Namespace).Delete(context.Background(), (*dv).Name, v12.DeleteOptions{}); err != nil {
-		Expect(errors.IsNotFound(err)).To(BeTrue())
+		Expect(err).To(MatchError(errors.IsNotFound, "k8serrors.IsNotFound"))
 	}
 	*dv = nil
 }
@@ -172,7 +172,7 @@ func SetDataVolumeGC(virtCli kubecli.KubevirtClient, ttlSec *int32) {
 func IsDataVolumeGC(virtCli kubecli.KubevirtClient) bool {
 	config, err := virtCli.CdiClient().CdiV1beta1().CDIConfigs().Get(context.TODO(), "config", v12.GetOptions{})
 	Expect(err).ToNot(HaveOccurred())
-	return config.Spec.DataVolumeTTLSeconds == nil || *config.Spec.DataVolumeTTLSeconds >= 0
+	return config.Spec.DataVolumeTTLSeconds != nil && *config.Spec.DataVolumeTTLSeconds >= 0
 }
 
 func GetCDI(virtCli kubecli.KubevirtClient) *v1beta1.CDI {

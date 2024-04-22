@@ -2,15 +2,12 @@ package util
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"reflect"
 	"strings"
 	"time"
-
-	"k8s.io/client-go/discovery"
 
 	"github.com/go-logr/logr"
 	objectreferencesv1 "github.com/openshift/custom-resource-status/objectreferences/v1"
@@ -21,8 +18,11 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/tools/reference"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 )
 
 // ForceRunModeEnv indicates if the operator should be forced to run in either local
@@ -34,11 +34,6 @@ type RunModeType string
 const (
 	LocalRunMode   RunModeType = "local"
 	ClusterRunMode RunModeType = "cluster"
-
-	// WatchNamespaceEnvVar is the constant for env variable WATCH_NAMESPACE
-	// which is the namespace where the watch activity happens.
-	// this value is empty if the operator is running with clusterScope.
-	WatchNamespaceEnvVar = "WATCH_NAMESPACE"
 
 	// PodNameEnvVar is the constant for env variable POD_NAME
 	// which is the name of the current pod.
@@ -82,24 +77,28 @@ var GetOperatorNamespace = func(logger logr.Logger) (string, error) {
 	return ns, nil
 }
 
-// GetWatchNamespace returns the namespace the operator should be watching for changes
-func GetWatchNamespace() (string, error) {
-	ns, found := os.LookupEnv(WatchNamespaceEnvVar)
-	if !found {
-		return "", fmt.Errorf("%s must be set", WatchNamespaceEnvVar)
-	}
-	return ns, nil
-}
-
 // ToUnstructured converts an arbitrary object (which MUST obey the
 // k8s object conventions) to an Unstructured
-func ToUnstructured(obj interface{}) (*unstructured.Unstructured, error) {
-	b, err := json.Marshal(obj)
-	if err != nil {
-		return nil, err
+func ToUnstructured(obj runtime.Object, c client.Client) (*unstructured.Unstructured, error) {
+	apiVersion, kind := obj.GetObjectKind().GroupVersionKind().ToAPIVersionAndKind()
+	if apiVersion == "" || kind == "" {
+		gvk, err := apiutil.GVKForObject(obj, c.Scheme())
+		if err != nil {
+			return nil, err
+		}
+		ta, err := meta.TypeAccessor(obj)
+		if err != nil {
+			return nil, err
+		}
+		ta.SetKind(gvk.Kind)
+		ta.SetAPIVersion(gvk.GroupVersion().String())
 	}
+
 	u := &unstructured.Unstructured{}
-	if err := json.Unmarshal(b, u); err != nil {
+	var err error
+	u.Object, err = runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+
+	if err != nil {
 		return nil, err
 	}
 	return u, nil
@@ -113,14 +112,15 @@ func GetRuntimeObject(ctx context.Context, c client.Client, obj client.Object) e
 
 // ComponentResourceRemoval removes the resource `obj` if it exists and belongs to the HCO
 // with wait=true it will wait, (util ctx timeout, please set it!) for the resource to be effectively deleted
-func ComponentResourceRemoval(ctx context.Context, c client.Client, obj interface{}, hcoName string, logger logr.Logger, dryRun bool, wait bool, protectNonHCOObjects bool) (bool, error) {
-	resource, err := ToUnstructured(obj)
+func ComponentResourceRemoval(ctx context.Context, c client.Client, obj client.Object, hcoName string, logger logr.Logger, dryRun bool, wait bool, protectNonHCOObjects bool) (bool, error) {
+
+	logger.Info("Removing resource", "name", obj.GetName(), "namespace", obj.GetNamespace(), "GVK", obj.GetObjectKind().GroupVersionKind(), "dryRun", dryRun)
+
+	resource, err := ToUnstructured(obj, c)
 	if err != nil {
 		logger.Error(err, "Failed to convert object to Unstructured")
 		return false, err
 	}
-
-	logger.Info("Removing resource", "name", resource.GetName(), "namespace", resource.GetNamespace(), "GVK", resource.GetObjectKind().GroupVersionKind(), "dryRun", dryRun)
 
 	ok, err := getResourceForDeletion(ctx, c, resource, logger)
 	if !ok {
@@ -173,8 +173,7 @@ func getDeletionOption(dryRun bool, wait bool) *client.DeleteOptions {
 		opts.DryRun = []string{metav1.DryRunAll}
 	}
 	if wait {
-		foreground := metav1.DeletePropagationForeground
-		opts.PropagationPolicy = &foreground
+		opts.PropagationPolicy = ptr.To(metav1.DeletePropagationForeground)
 	}
 	return opts
 }

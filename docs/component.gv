@@ -15,7 +15,18 @@ digraph component {
 		"deployment/hco-operator" [label="deployment/hco-operator"]
 		"deployment/hco-webhook" [label="deployment/hco-webhook"]
 		"deployment/hyperconverged-cluster-cli-download" [label="deployment/hyperconverged-cluster-cli-download"]
+	}
+	subgraph "cluster_kubevirt-apiserver-proxy" {
+		fontname="Courier-Bold" fontsize=42 group="kubevirt-apiserver-proxy" label="kubevirt-apiserver-proxy" rank=same style=dashed
+		"deployment/kubevirt-apiserver-proxy" [label="deployment/kubevirt-apiserver-proxy"]
+	}
+	subgraph "cluster_kubevirt-console-plugin" {
+		fontname="Courier-Bold" fontsize=42 group="kubevirt-console-plugin" label="kubevirt-console-plugin" rank=same style=dashed
 		"deployment/kubevirt-console-plugin" [label="deployment/kubevirt-console-plugin"]
+	}
+	subgraph "cluster_multi-tenant" {
+		fontname="Courier-Bold" fontsize=42 group="multi-tenant" label="multi-tenant" rank=same style=dashed
+		"deployment/mtq-operator" [label="deployment/mtq-operator"]
 	}
 	subgraph cluster_network {
 		fontname="Courier-Bold" fontsize=42 group=network label=network rank=same style=dashed
@@ -25,6 +36,10 @@ digraph component {
 		"deployment/cluster-network-addons-operator" [label="deployment/cluster-network-addons-operator"]
 		"deployment/kubemacpool-cert-manager" [label="deployment/kubemacpool-cert-manager"]
 		"deployment/kubemacpool-mac-controller-manager" [label="deployment/kubemacpool-mac-controller-manager"]
+	}
+	subgraph "cluster_quota-management" {
+		fontname="Courier-Bold" fontsize=42 group="quota-management" label="quota-management" rank=same style=dashed
+		"deployment/aaq-operator" [label="deployment/aaq-operator"]
 	}
 	subgraph cluster_schedule {
 		fontname="Courier-Bold" fontsize=42 group=schedule label=schedule rank=same style=dashed
@@ -51,8 +66,12 @@ digraph component {
 	}
 	edge [style=invis]
 	"KubeVirt/kubevirt-kubevirt-hyperconverged" -> "deployment/hco-operator"
-	"deployment/hco-operator" -> "NetworkAddonsConfig/cluster"
-	"NetworkAddonsConfig/cluster" -> "SSP/ssp-kubevirt-hyperconverged"
+	"deployment/hco-operator" -> "deployment/kubevirt-apiserver-proxy"
+	"deployment/kubevirt-apiserver-proxy" -> "deployment/kubevirt-console-plugin"
+	"deployment/kubevirt-console-plugin" -> "deployment/mtq-operator"
+	"deployment/mtq-operator" -> "NetworkAddonsConfig/cluster"
+	"NetworkAddonsConfig/cluster" -> "deployment/aaq-operator"
+	"deployment/aaq-operator" -> "SSP/ssp-kubevirt-hyperconverged"
 	"SSP/ssp-kubevirt-hyperconverged" -> "CDI/cdi-kubevirt-hyperconverged"
 	"CDI/cdi-kubevirt-hyperconverged" -> "deployment/virt-template-validator"
 	"deployment/virt-template-validator" -> "HyperConverged/kubevirt-hyperconverged"

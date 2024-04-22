@@ -8,11 +8,11 @@ The HyperConverged Cluster operator copies the cluster configuration values to t
 The Hyperconverged Cluster Operator configures kubevirt and its supporting operators in an opinionated way and overwrites its operands when there is an unexpected change to them.
 Users are expected to not modify the operands directly. The HyperConverged custom resource is the source of truth for the configuration.
 
-To make it more visible and clear for end users, the Hyperconverged Cluster Operator will count the number of these revert actions in a metric named kubevirt_hco_out_of_band_modifications_count.
-According to the value of that metric in the last 10 minutes, an alert named KubevirtHyperconvergedClusterOperatorCRModification will be eventually fired:
+To make it more visible and clear for end users, the Hyperconverged Cluster Operator will count the number of these revert actions in a metric named kubevirt_hco_out_of_band_modifications_total.
+According to the value of that metric in the last 10 minutes, an alert named KubeVirtCRModified will be eventually fired:
 ```
 Labels
-    alertname=KubevirtHyperconvergedClusterOperatorCRModification
+    alertname=KubeVirtCRModified
     component_name=kubevirt-kubevirt-hyperconverged
     severity=warning
 ```
@@ -130,6 +130,17 @@ or new features that are not enabled by default.
 To enable a feature, add its name to the `featureGates` list and set it to `true`. Missing or `false` feature gates
 disables the feature.
 
+### downwardMetrics Feature Gate
+Set the `downwardMetrics` feature gate in order to allow exposing a limited set of VM and host metrics to the guest.
+The format is compatible with [vhostmd](https://github.com/vhostmd/vhostmd).
+These metrics allow third-parties diagnosing issues.
+DownwardMetrics may be exposed to the guest through a `volume` or a `virtio-serial port`.
+
+By default, if the `downwardMetrics` is not set to `false`, the metrics will be available to the guests.
+This means that updates from previous versions will not require any special configuration.
+
+**Note**: In future versions, the feature gate will be disabled by default.
+
 ### withHostPassthroughCPU Feature Gate
 Set the `withHostPassthroughCPU` feature gate in order to allow migrating a virtual machine with CPU host-passthrough
 mode. This can provide slightly better CPU performance, but should be enabled only when the Cluster is homogeneous from
@@ -160,21 +171,29 @@ reverted back to false.
 
 **Default**: `false`
 
+### deployVmConsoleProxy Feature Gate
+Set the `deployVmConsoleProxy` feature gate to true to allow SSP operator to deploy its resources. SSP operator will 
+deploy a proxy that provides an access to the VNC console of a KubeVirt Virtual Machine (VM).
+
+**Note**: Once `deployVmConsoleProxy` is set to true, SSP operator will not delete deployed resources if `deployVmConsoleProxy` is 
+reverted back to false.
+
+**Default**: `false`
+
 ### deployKubeSecondaryDNS Feature Gate
 Set the `deployKubeSecondaryDNS` feature gate to true to allow deploying KubeSecondaryDNS by CNAO.
 For additional information, see here: [KubeSecondaryDNS](https://github.com/kubevirt/kubesecondarydns)
 
 **Default**: `false`
 
-### root Feature Gate
-Set the `root` feature gate to true in order to not run your virtual machines in rootless virt-launcher.
+### nonRoot Feature Gate
+Disable the `nonRoot` feature gate in order to not run your virtual machines in rootless virt-launcher.
 
 **Note**: You can migrate rootless virt-launcher-es to root implementation by triggering migration or restarting the VM.
 
-**Note**: In the past the same feature gate was named `nonRoot` with the opposite semantic, the `nonRoot` feature gate is now deprecated but still available:
-a mutating webhook is handling the conversion.
+**Note**: the `nonRoot` feature gate is now deprecated but still available; in the future only the nonRoot mode will be available.
 
-**Default**: `false`
+**Default**: `true`
 
 ### persistentReservation Feature Gate
 Set the `persistentReservation` feature gate to true in order to enable the reservation of a LUN through the SCSI Persistent Reserve commands.
@@ -196,6 +215,39 @@ VMI example:
 
 **Default**: `false`
 
+### enableManagedTenantQuota Feature Gate
+If set to true, enables the Managed Tenant Quota (MTQ) feature. See more details 
+[here](https://github.com/kubevirt/managed-tenant-quota).
+
+**Default**: `false`
+
+### autoResourceLimits Feature Gate
+Set the `autoResourceLimits` feature gate to true in order to enable KubeVirt to set automatic limits when they are needed.
+If ResourceQuota with set memory limits is associated with a namespace, each pod in that namespace must have memory limits set.
+By default, KubeVirt does not set such limits to the virt-launcher pod.
+When this feature gate is enabled, KubeVirt will set limits to the virt-launcher pod if they are not set manually
+and if a resource quota with memory limits is associated with the creation namespace.
+
+**Note**: this feature is in Developer Preview.
+
+**Default**: `false`
+
+### alignCPUs Feature Gate
+Set the `alignCPUs` feature gate to enable KubeVirt
+to request up to two additional dedicated CPUs in order to complete the total CPU count
+to an even parity when using emulator thread isolation.
+
+**Note**: this feature is in Developer Preview.
+
+**Default**: `false`
+
+### enableApplicationAwareQuota Feature Gate
+Set the `enableApplicationAwareQuota` feature gate to `true` to enable the [Application Aware Quota](https://github.com/kubevirt/application-aware-quota) feature 
+
+See [below](#configure-application-aware-quota-aaq) for Application Aware Quota configurations.
+
+**Default**: `false`
+
 ### Feature Gates Example
 
 ```yaml
@@ -211,6 +263,8 @@ spec:
     enableCommonBootImageImport: true
     deployTektonTaskResources: true
     deployKubeSecondaryDNS: true
+    enableManagedTenantQuota: true
+    enableApplicationAwareQuota: true
 ```
 
 ## Live Migration Configurations
@@ -219,16 +273,22 @@ Set the live migration configurations by modifying the fields in the `liveMigrat
 
 ### bandwidthPerMigration
 
-Bandwidth limit of each migration, in MiB/s. The format is a number and with the `Mi` suffix, e.g. `2048Mi`.
+Bandwidth limit of each migrationi, the value is in quantity of bytes per second. The format is a number with an optional quantity suffix, e.g. `2048Mi` means 2048MiB/sec.
 
 **default**: unset
 
 ### completionTimeoutPerGiB
 
-The migration will be canceled if it has not completed in this time, in seconds per GiB of memory. For example, a
-virtual machine instance with 6GiB memory will timeout if it has not completed migration in 4800 seconds. If the
-Migration Method is BlockMigration, the size of the migrating disks is included in the calculation. The format is a
-number.
+If a migrating VM is big and busy, while the connection to the destination node 
+is slow, migration may never converge. The completion timeout is calculated
+based on completionTimeoutPerGiB times the size of the guest (both RAM and 
+migrated disks, if any). For example, with completionTimeoutPerGiB set to 800,
+a virtual machine instance with 6GiB memory will timeout if it has not
+completed migration in 1h20m. Use a lower completionTimeoutPerGiB to induce
+quicker failure, so that another destination or post-copy is attempted. Use a
+higher completionTimeoutPerGiB to let workload with spikes in its memory dirty
+rate to converge.
+The format is a number.
 
 **default**: 800
 
@@ -264,9 +324,13 @@ It allows the platform to compromise performance/availability of VMIs to guarant
 
 ### allowPostCopy
 
-It enables post-copy live migrations. Such migrations allow even the busiest VMIs to successfully live-migrate.
-However, events like a network failure can cause a VMI crash.
-If set to true, migrations will still start in pre-copy, but switch to post-copy when CompletionTimeoutPerGiB triggers.
+When enabled, KubeVirt attempts to use post-copy live-migration in case it 
+reaches its completion timeout while attempting pre-copy live-migration.
+Post-copy migrations allow even the busiest VMs to successfully live-migrate.
+However, events like a network failure or a failure in any of the source or
+destination nodes can cause the migrated VM to crash or reach inconsistency.
+Enable this option when evicting nodes is more important than keeping VMs
+alive.
 
 **default**: false
 
@@ -304,7 +368,7 @@ metadata:
   name: kubevirt-hyperconverged
 spec:
   mediatedDevicesConfiguration:
-    mediatedDevicesTypes:
+    mediatedDeviceTypes:
       - nvidia-222
       - nvidia-228
       - i915-GVTg_V5_4
@@ -323,18 +387,18 @@ metadata:
   name: kubevirt-hyperconverged
 spec:
   mediatedDevicesConfiguration:
-    mediatedDevicesTypes:
+    mediatedDeviceTypes:
       - nvidia-222
       - nvidia-228
       - i915-GVTg_V5_4
-    nodeMediatedDevices:
+    nodeMediatedDeviceTypes:
       - nodeSelector:
-        someLabel1: ""
-        mediatedDevicesTypes:
+          someLabel1: ""
+        mediatedDeviceTypes:
         - nvidia-222
       - nodeSelector:
-        kubernetes.io/hostname=nodeName
-        mediatedDevicesTypes:
+          kubernetes.io/hostname: nodeName
+        mediatedDeviceTypes:
         - nvidia-228
 ```
 
@@ -396,7 +460,7 @@ spec:
   permittedHostDevices:
     pciHostDevices:
     - pciDeviceSelector: "10DE:1DB6"
-      resourceName: "nvidia.com/GV100GL_Tesla_V100",
+      resourceName: "nvidia.com/GV100GL_Tesla_V100"
     - pciDeviceSelector: "10DE:1EB8"
       resourceName: "nvidia.com/TU104GL_Tesla_T4"
     mediatedDevices:
@@ -463,7 +527,42 @@ spec:
   scratchSpaceStorageClass: aStorageClassName
 ```
 
-## Storage Resource Configurations
+## Resource Requests
+
+### VMI PODs CPU Allocation Ratio
+
+KubeVirt runs Virtual Machines in a Kubernetes Pod.
+This pod requests a certain amount of CPU time from the host.
+On the other hand, the Virtual Machine is being created with a certain amount of vCPUs.
+The number of vCPUs may not necessarily correlate to the number of requested CPUs by the POD.
+Depending on the QOS of the POD, vCPUs can be scheduled on a variable amount of physical CPUs; this depends on the available CPU resources on a node.
+When there are fewer available CPUs on the node as the requested vCPU, vCPU will be over committed.
+By default, each pod requests 100mil of CPU time. The CPU requested on the pod sets the cgroups cpu.shares which serves as a priority for the scheduler to provide CPU time for vCPUs in this POD.
+As the number of vCPUs increases, this will reduce the amount of CPU time each vCPU may get when competing with other processes on the node or other Virtual Machine Instances with a lower amount of vCPUs.
+The vmiCPUAllocationRatio comes to normalize the amount of CPU time the POD will request based on the number of vCPUs.
+POD CPU request = number of vCPUs * 1/cpuAllocationRatio
+For example, a value of 1 means 1 physical CPU thread per VMI CPU thread.
+A value of 100 would be 1% of a physical thread allocated for each requested VMI thread.
+The default value is 10.
+This option has no effect on VMIs that request dedicated CPUs.
+
+**Note**: In Kubernetes, one full core is 1000 of CPU time More Information
+
+Administrators can change this ratio by updating the HCO CR.
+
+#### VMI PODs CPU request example
+
+```yaml
+apiVersion: hco.kubevirt.io/v1beta1
+kind: HyperConverged
+metadata:
+  name: kubevirt-hyperconverged
+spec:
+  resourceRequirements:
+    vmiCPUAllocationRatio: 16
+```
+
+### Storage Resource Configurations
 
 The administrator can limit storage workloads resources and to require minimal resources. Use the `resourceRequirements`
 field under the HyperConverged `spec` filed. Add the `storageWorkloads` field under the `resourceRequirements`. The
@@ -471,7 +570,7 @@ content of the `storageWorkloads` field is
 the [standard kubernetes resource configuration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.19/#resourcerequirements-v1-core)
 .
 
-### Storage Resource Configurations Example
+#### Storage Resource Configurations Example
 
 ```yaml
 apiVersion: hco.kubevirt.io/v1beta1
@@ -504,7 +603,7 @@ metadata:
   name: kubevirt-hyperconverged
   namespace: kubevirt-hyperconverged
 spec:
-  certificateRotation:
+  certConfig:
     ca:
       duration: 48h0m0s
       renewBefore: 24h0m0s
@@ -681,7 +780,6 @@ spec:
     insecureRegistries:
       - "private-registry-example-1:5000"
       - "private-registry-example-2:5000"
-      ...
 ```
 
 ## KubeSecondaryDNS Name Server IP
@@ -697,6 +795,25 @@ metadata:
   name: kubevirt-hyperconverged
 spec:
   kubeSecondaryDNSNameServerIP: "127.0.0.1"
+```
+
+## Network Binding plugin
+In order to set NetworkBinding, set it on HyperConverged CR under spec.networkBinding field.
+Default: empty map (no binding plugins).
+
+### Network Binding plugin example
+```yaml
+apiVersion: hco.kubevirt.io/v1beta1
+kind: HyperConverged
+metadata:
+  name: kubevirt-hyperconverged
+spec:
+  networkBinding:
+    custom-binding1:
+      sidecarImage: quay.io/custom-binding1-image
+    custom-binding2:
+      sidecarImage: quay.io/custom-binding2-image
+      networkAttachmentDefinition: customBinding2Nad
 ```
 
 ## Modify common golden images
@@ -750,6 +867,19 @@ for example, set the storage class for centos8 golden image, and modify the sour
             storageClassName: "some-non-default-storage-class"
     garbageCollect: Outdated
     managedDataSource: centos-stream8
+```
+
+### Override the golden images namespace
+To use another namespace for the common golden images, e.g. in order to hide them, set the `spec.commonBootImageNamespace`
+field with the required namespace name.
+
+The customized namespace is ignored for modified golden images.
+
+```yaml
+- metadata:
+    name: kubevirt-hyperconverged
+  spec:
+    commonBootImageNamespace: custom-namespace-name
 ```
 
 ## Configure custom golden images
@@ -824,6 +954,22 @@ spec:
 All the values defined [here](https://kubevirt.io/api-reference/master/definitions.html#_v1_logverbosity)
 can be applied.
 
+### Containerized data importer (CDI)
+Different levels of verbosity are used in CDI to control the amount of information that is logged. The verbosity level of logs in CDI can be adjusted using a dedicated field that affect all of its components. 
+This feature enables users to control the amount of detail displayed in logs, ranging from minimal to detailed debugging information.
+
+For example:
+```yaml
+kind: HyperConverged
+metadata:
+  name: kubevirt-hyperconverged
+spec:
+  logVerbosityConfig:
+    cdi: 3
+```
+
+The verbosity levels in CDI typically range from 1 to 3. Level 1 equates to essential log information, while level 3 delves into more detailed logging, providing more specific information.
+
 ## Workloads protection on uninstall
 
 `UninstallStrategy` defines how to proceed on uninstall when workloads (VirtualMachines, DataVolumes) still exist:
@@ -836,19 +982,28 @@ Please correctly consider the implications of this option before setting it.
 `BlockUninstallIfWorkloadsExist` is the default behaviour.
 
 
-## Cluster level EvictionStrategy
+## Cluster-level eviction strategy
 
-`EvictionStrategy` defines at the cluster level if the VirtualMachineInstance should be
+`evictionStrategy` defines at the cluster level if VirtualMachineInstances should be
 migrated instead of shut-off in case of a node drain. If the VirtualMachineInstance specific
-field is set it overrides the cluster level one.
+field is set it overrides the cluster-level one.
 Possible values:
 
 - `None` no eviction strategy at cluster level.
-- `LiveMigrate` migrate the VM on eviction.
-- `External` block eviction and notify an external controller.
+- `LiveMigrate` migrate the VM on eviction; a non-live-migratable VM with no specific strategy will block the drain of the node until manually evicted.
+- `LiveMigrateIfPossible` migrate the VM on eviction if live migration is possible, otherwise directly evict.
+- `External` block the drain, track the eviction and notify an external controller.
 
 `LiveMigrate` is the default behaviour with multiple worker nodes, `None` on single worker clusters.
 
+For example:
+```yaml
+kind: HyperConverged
+metadata:
+  name: kubevirt-hyperconverged
+spec:
+  evictionStrategy: LiveMigrateIfPossible
+```
 
 ## VM state storage class
 
@@ -862,6 +1017,114 @@ metadata:
   name: kubevirt-hyperconverged
 spec:
   vmStateStorageClass: "rook-cephfs"
+```
+
+## Auto CPU limits
+
+`autoCPULimitNamespaceLabelSelector` allows defining a namespace label for which VM pods (virt-launcher) will have a
+CPU resource limit of 1 per vCPU.  
+This option allows defining namespace CPU quotas equal to the maximum total number of vCPU allowed in that namespace.  
+Example:
+```yaml
+kind: HyperConverged
+metadata:
+  name: kubevirt-hyperconverged
+spec:
+  resourceRequirements:
+    autoCPULimitNamespaceLabelSelector:
+      matchLabels:
+        autocpulimit: "true"
+```
+In the example above, VM pods in namespaces that have the label "autocpulimit" set to "true" will have a CPU resource
+limit of 1 per vCPU.  
+**Important note**: this setting is incompatible with a `vmiCPUAllocationRatio` of 1, since that configuration can lead to
+VM pods using more than 1 CPU per vCPU.
+
+## Virtual machine options
+
+`VirtualMachineOptions` holds the cluster level information regarding the virtual machine.
+This defines the default behavior of some features related to the virtual machines.
+
+
+- `DisableFreePageReporting`
+  With freePageReporting the guest OS informs the hypervisor about pages which are not
+in use by the guest anymore. The hypervisor can use this information for freeing these pages.
+
+  freePageReporting is an attribute that can be defined at [Memory balloon device](https://libvirt.org/formatdomain.html#memory-balloon-device) 
+in libvirt. freePageReporting will NOT be enabled for the vmis which does not have the Memballoon driver,
+OR which are requesting any high performance components. A vmi is considered as high performance if one of the following is true:
+  - the vmi requests a dedicated cpu.
+  - the realtime flag is enabled.
+  - the vmi requests hugepages.
+  
+  With `DisableFreePageReporting` freePageReporting will never be enabled in any vmi.
+`DisableFreePageReporting` is a boolean and freePageReporting is enabled by default (disableFreePageReporting=false).
+
+- `disableSerialConsoleLog`
+  DisableSerialConsoleLog disables logging the auto-attached default serial console.
+  If not set, serial console logs will be written to a file in the virt-launcher pod and then streamed from a container named `guest-console-log` so that they can be consumed or aggregated according to the standard k8s logging architecture.
+  VM logs streamed over the serial console contain really useful debug/troubleshooting info.  
+  The value can be individually overridden for each VM, not relevant if AutoattachSerialConsole is disabled for the VM.
+
+> Caution
+> 
+> If the serial console is used for interactive access, its output will also be streamed to the log system.
+> Passwords are normally not echoed on the screen so they are not going to be collected on the logs.
+> However, if you type by mistake a password for a command or if you have to pass it as a clear text parameter it will be written in the logs along with all other visible text.
+> If you are inputting any data or commands that contain sensisitive information please consider using SSH unless the serial console is absolutely necessary for troubleshooting.
+
+  `disableSerialConsoleLog` is a boolean, logging of serial console is disabled by default (disableSerialConsoleLog=true).
+
+Example
+```yaml
+kind: HyperConverged
+metadata:
+  name: kubevirt-hyperconverged
+spec:
+  virtualMachineOptions:
+    disableFreePageReporting: false
+    disableSerialConsoleLog: true
+```
+
+## KSM Configuration
+
+`ksmConfiguration` instructs on which nodes KSM will be enabled, exposing a `nodeLabelSelector`.  
+`nodeLabelSelector` is a [LabelSelector](https://github.com/kubernetes/apimachinery/blob/60180f072f73eafec72ef9f2c418a6bb1357d434/pkg/apis/meta/v1/types.go#L1195)
+and defines the filter, based on the node labels. If a node's labels match the label selector term,
+then on that node, KSM will be enabled.
+>**NOTE**  
+>If `nodeLabelSelector` is nil KSM will not be enabled on any nodes.  
+>Empty `nodeLabelSelector` will enable KSM on every node.
+
+Examples
+- Enabling KSM on nodes in which the hostname is `node01` or `node03`:
+```yaml
+spec:
+  ksmConfiguration:
+    nodeLabelSelector:
+      matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+            - node01
+            - node03
+```
+
+- Enabling KSM on nodes with labels `kubevirt.io/first-label: true`, `kubevirt.io/second-label: true`:
+```yaml
+spec:
+  ksmConfiguration:
+    nodeLabelSelector:
+      matchLabels:
+        kubevirt.io/first-label: "true"
+        kubevirt.io/second-label: "true"
+```
+
+- Enabling KSM on every node:
+```yaml
+spec:
+  ksmConfiguration:
+    nodeLabelSelector: {}
 ```
 
 ## Hyperconverged Kubevirt cluster-wide Crypto Policy API
@@ -882,6 +1145,48 @@ The TLS security profiles are based on [Mozilla Recommended Configurations](http
 With the `Custom` profile, the cipher list should be expressed according to OpenSSL names.
 
 On plain k8s, where APIServer CR is not available, the default value will be `Intermediate`.
+
+## Configure Application Aware Quota (AAQ)
+To enable the AAQ feature, set the `spec.featureGates.enableApplicationAwareQuota` field to `true`. See [featureGates](#enableapplicationawarequota-feature-gate) above.
+
+To configure AAQ, set the fields of the `applicationAwareConfig` object in the HyperConverged resource's spec. The 
+`applicationAwareConfig` object contains several fields:
+* `vmiCalcConfigName` - determines how resource allocation will be done with ApplicationResourceQuota.
+  Supported values are:
+  * `VmiPodUsage` - calculates pod usage for VM-associated pods while concealing migration-specific resources. 
+  * `VirtualResources` - allocates resources for VM-associated pods, using the VM's RAM size for memory and CPU threads 
+     for processing.
+  * `DedicatedVirtualResources` (default) - allocates resources for VM-associated pods, appending a /vm suffix to 
+     `requests/limits.cpu` and `requests/limits.memory`, derived from the VM's RAM size and CPU threads. Notably, it 
+     does not allocate resources for the standard `requests/limits.cpu` and `requests/limits.memory`.
+  * `IgnoreVmiCalculator` - avoids allocating VM-associated pods differently from normal pods, maintaining uniform
+     resource allocation.
+* `namespaceSelector` - determines in which namespaces scheduling gate will be added to pods. This field is a standard 
+                        kubernetes selector.
+* `allowApplicationAwareClusterResourceQuota` (default = false) - set to true, to allow creation and management of ClusterAppsResourceQuota
+  
+  **note**: this setting cause some performance cost. Only set to true if there is a good reason.
+
+### Example
+```yaml
+spec:
+  applicationAwareConfig:
+    vmiCalcConfigName: "VmiPodUsage"
+    namespaceSelector:
+      matchLabels:
+        some-label: "some value"
+    allowApplicationAwareClusterResourceQuota: true
+```
+## Configure higher workload density
+Cluster administrators can opt-in for higher VM workload density by configuring the memroy overcommit percentage as follows:
+```yaml
+spec:
+  higherWorkloadDensity:
+    memoryOvercommitPercentage: <intValue> # i.e. 150, 200, default is 100
+```
+As an example, if the VM compute container requests 4Gi memory, then the corresponding VM guest OS will see `4Gi * 150 / 100 = 6Gi`.
+
+**Note**: When updating the overcommit percentage, changes will apply to existing VM workloads only after a power cycle or after live-imgration. 
 
 ## Configurations via Annotations
 
@@ -1061,7 +1366,7 @@ kubectl annotate --overwrite -n kubevirt-hyperconverged hco kubevirt-hyperconver
 ```
 
 **_Note:_** The full configurations options for Kubevirt, CDI and CNAO which are available on the cluster, can be explored by using `kubectl explain <resource name>.spec`. For example:  
-```yaml
+```bash
 $ kubectl explain kv.spec
 KIND:     KubeVirt
 VERSION:  kubevirt.io/v1
@@ -1090,7 +1395,7 @@ FIELDS:
 ```
 
 To inspect lower-level objects under `spec`, they can be specified in `kubectl explain`, recursively. e.g.  
-```yaml
+```bash
 $ kubectl explain kv.spec.configuration.network
 KIND:     KubeVirt
 VERSION:  kubevirt.io/v1
@@ -1119,12 +1424,12 @@ The jsonpatch annotation feature is particularly dangerous when upgrading Kubevi
 **USE WITH CAUTION!**
 
 As the usage of the jsonpatch annotation is not safe, the HyperConverged Cluster Operator will count the number of these
-modifications in a metric named kubevirt_hco_unsafe_modification_count.
+modifications in a metric named kubevirt_hco_unsafe_modifications.
 if the counter is not zero, an alert named
-`KubevirtHyperconvergedClusterOperatorUSModification will` be eventually fired:
+`UnsupportedHCOModification will` be eventually fired:
 ```
 Labels
-    alertname=KubevirtHyperconvergedClusterOperatorUSModification
+    alertname=UnsupportedHCOModification
     annotation_name="kubevirt.kubevirt.io/jsonpatch"
     severity=info
 ```
@@ -1150,8 +1455,9 @@ The structure of the annotation is the following one:
 
 ```yaml
 apiVersion: hco.kubevirt.io/v1beta1
-kind: hco
+kind: HyperConverged
 metadata:
+  name: kubevirt-hyperconverged
   annotations:
     hco.kubevirt.io/tuningPolicy: '{"qps":100,"burst":200}'
 ...

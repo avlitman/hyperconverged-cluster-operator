@@ -13,6 +13,7 @@ import (
 	consolev1 "github.com/openshift/api/console/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	hcov1beta1 "github.com/kubevirt/hyperconverged-cluster-operator/api/v1beta1"
 	"github.com/kubevirt/hyperconverged-cluster-operator/controllers/common"
@@ -56,13 +57,13 @@ func (*cliDownloadHooks) updateCr(req *common.HcoRequest, Client client.Client, 
 		return false, false, errors.New("can't convert to ConsoleCLIDownload")
 	}
 	if !reflect.DeepEqual(found.Spec, ccd.Spec) ||
-		!reflect.DeepEqual(found.Labels, ccd.Labels) {
+		!util.CompareLabels(ccd, found) {
 		if req.HCOTriggered {
 			req.Logger.Info("Updating existing ConsoleCLIDownload's Spec to new opinionated values")
 		} else {
 			req.Logger.Info("Reconciling an externally updated ConsoleCLIDownload's Spec to its opinionated values")
 		}
-		util.DeepCopyLabels(&ccd.ObjectMeta, &found.ObjectMeta)
+		util.MergeLabels(&ccd.ObjectMeta, &found.ObjectMeta)
 		ccd.Spec.DeepCopyInto(&found.Spec)
 		err := Client.Update(req.Ctx, found)
 		if err != nil {
@@ -94,7 +95,7 @@ func NewConsoleCLIDownload(hc *hcov1beta1.HyperConverged) *consolev1.ConsoleCLID
 				},
 				{
 					Href: baseURL + "/arm64/linux/virtctl.tar.gz",
-					Text: "Download virtctl for Linux for arm64",
+					Text: "Download virtctl for Linux for ARM 64",
 				},
 				{
 					Href: baseURL + "/amd64/mac/virtctl.zip",
@@ -102,7 +103,7 @@ func NewConsoleCLIDownload(hc *hcov1beta1.HyperConverged) *consolev1.ConsoleCLID
 				},
 				{
 					Href: baseURL + "/arm64/mac/virtctl.zip",
-					Text: "Download virtctl for Mac for arm64",
+					Text: "Download virtctl for Mac for ARM 64",
 				},
 				{
 					Href: baseURL + "/amd64/windows/virtctl.zip",
@@ -110,7 +111,7 @@ func NewConsoleCLIDownload(hc *hcov1beta1.HyperConverged) *consolev1.ConsoleCLID
 				},
 				{
 					Href: baseURL + "/arm64/windows/virtctl.zip",
-					Text: "Download virtctl for Windows for arm64",
+					Text: "Download virtctl for Windows for ARM 64",
 				},
 			},
 		},
@@ -179,7 +180,7 @@ func (*cliDownloadsRouteHooks) updateCr(req *common.HcoRequest, Client client.Cl
 		} else {
 			req.Logger.Info("Reconciling an externally updated Route Spec to its opinionated values")
 		}
-		util.DeepCopyLabels(&route.ObjectMeta, &found.ObjectMeta)
+		util.MergeLabels(&route.ObjectMeta, &found.ObjectMeta)
 		route.Spec.DeepCopyInto(&found.Spec)
 		err := Client.Update(req.Ctx, found)
 		if err != nil {
@@ -193,7 +194,6 @@ func (*cliDownloadsRouteHooks) updateCr(req *common.HcoRequest, Client client.Cl
 func (cliDownloadsRouteHooks) justBeforeComplete(_ *common.HcoRequest) { /* no implementation */ }
 
 func NewCliDownloadsRoute(hc *hcov1beta1.HyperConverged) *routev1.Route {
-	weight := int32(100)
 	return &routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cliDownloadsServiceName,
@@ -211,7 +211,7 @@ func NewCliDownloadsRoute(hc *hcov1beta1.HyperConverged) *routev1.Route {
 			To: routev1.RouteTargetReference{
 				Kind:   "Service",
 				Name:   cliDownloadsServiceName,
-				Weight: &weight,
+				Weight: ptr.To[int32](100),
 			},
 		},
 	}

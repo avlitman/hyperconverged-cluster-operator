@@ -77,7 +77,14 @@ function get_current_versions {
     ["SSP"]=""
     ["HPPO"]=""
     ["HPP"]=""
+    ["MTQ"]=""
+    ["AAQ"]=""
     ["KUBEVIRT_CONSOLE_PLUGIN"]=""
+    ["KUBEVIRT_CONSOLE_PROXY"]=""
+    ["NODE_DRIVER_REG"]=""
+    ["LIVENESS_PROBE"]=""
+    ["CSI_SNAPSHOT"]=""
+    ["CSI_SIG_STORAGE"]=""
   )
 
   for component in "${!CURRENT_VERSIONS[@]}"; do
@@ -93,7 +100,14 @@ function get_updated_versions {
     ["SSP"]="kubevirt/ssp-operator"
     ["HPPO"]="kubevirt/hostpath-provisioner-operator"
     ["HPP"]="kubevirt/hostpath-provisioner"
+    ["MTQ"]="kubevirt/managed-tenant-quota"
+    ["AAQ"]="kubevirt/application-aware-quota"
     ["KUBEVIRT_CONSOLE_PLUGIN"]="kubevirt-ui/kubevirt-plugin"
+    ["KUBEVIRT_CONSOLE_PROXY"]="kubevirt-ui/kubevirt-apiserver-proxy"
+    ["NODE_DRIVER_REG"]="kubernetes-csi/node-driver-registrar"
+    ["LIVENESS_PROBE"]="kubernetes-csi/livenessprobe"
+    ["CSI_SNAPSHOT"]="kubernetes-csi/external-snapshotter"
+    ["CSI_SIG_STORAGE"]="kubernetes-csi/external-provisioner"
   )
 
   IMPORT_REPOS=(
@@ -101,6 +115,8 @@ function get_updated_versions {
     ["CDI"]="kubevirt.io/containerized-data-importer-api"
     ["NETWORK_ADDONS"]="kubevirt/cluster-network-addons-operator"
     ["SSP"]="kubevirt.io/ssp-operator/api"
+    ["MTQ"]="kubevirt.io/managed-tenant-quota"
+    ["AAQ"]="kubevirt.io/application-aware-quota"
   )
 
   UPDATED_VERSIONS=()
@@ -138,7 +154,7 @@ function get_latest_release() {
   major=$(echo $current_version | cut -d. -f1)
   minor=$(echo $current_version | cut -d. -f2)
 
-  RELEASES=$(curl -s -L "https://api.github.com/repos/$repo/releases" | jq -r '.[].tag_name')
+  RELEASES=$(curl -s -L "https://api.github.com/repos/$repo/releases" | jq -r '.[] | select(.tag_name | test("^v?[0-9].*")) | .tag_name')
   releases=(${RELEASES})
 
   semversort "${releases[*]}"

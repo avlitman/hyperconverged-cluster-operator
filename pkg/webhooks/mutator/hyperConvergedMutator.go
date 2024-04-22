@@ -79,19 +79,6 @@ func (hcm *HyperConvergedMutator) mutateHyperConverged(_ context.Context, req ad
 		}
 	}
 
-	if hc.Spec.FeatureGates.Root == nil {
-		value := false
-		//nolint SA1019
-		if hc.Spec.FeatureGates.NonRoot != nil {
-			value = !*hc.Spec.FeatureGates.NonRoot
-		}
-		patches = append(patches, jsonpatch.JsonPatchOperation{
-			Operation: "add",
-			Path:      "/spec/featureGates/root",
-			Value:     value,
-		})
-	}
-
 	if hc.Spec.EvictionStrategy == nil {
 		ci := hcoutil.GetClusterInfo()
 		if ci.IsInfrastructureHighlyAvailable() {
@@ -108,6 +95,25 @@ func (hcm *HyperConvergedMutator) mutateHyperConverged(_ context.Context, req ad
 			})
 		}
 
+	}
+
+	if hc.Spec.MediatedDevicesConfiguration != nil {
+		if len(hc.Spec.MediatedDevicesConfiguration.MediatedDevicesTypes) > 0 && len(hc.Spec.MediatedDevicesConfiguration.MediatedDeviceTypes) == 0 { //nolint SA1019
+			patches = append(patches, jsonpatch.JsonPatchOperation{
+				Operation: "add",
+				Path:      "/spec/mediatedDevicesConfiguration/mediatedDeviceTypes",
+				Value:     hc.Spec.MediatedDevicesConfiguration.MediatedDevicesTypes, //nolint SA1019
+			})
+		}
+		for i, hcoNodeMdevTypeConf := range hc.Spec.MediatedDevicesConfiguration.NodeMediatedDeviceTypes {
+			if len(hcoNodeMdevTypeConf.MediatedDevicesTypes) > 0 && len(hcoNodeMdevTypeConf.MediatedDeviceTypes) == 0 { //nolint SA1019
+				patches = append(patches, jsonpatch.JsonPatchOperation{
+					Operation: "add",
+					Path:      fmt.Sprintf("/spec/mediatedDevicesConfiguration/nodeMediatedDeviceTypes/%d/mediatedDeviceTypes", i),
+					Value:     hcoNodeMdevTypeConf.MediatedDevicesTypes, //nolint SA1019
+				})
+			}
+		}
 	}
 
 	if len(patches) > 0 {

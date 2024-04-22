@@ -92,6 +92,20 @@ func WithRng() Option {
 	}
 }
 
+// WithWatchdog adds a watchdog to the vmi devices.
+func WithWatchdog(action v1.WatchdogAction) Option {
+	return func(vmi *v1.VirtualMachineInstance) {
+		vmi.Spec.Domain.Devices.Watchdog = &v1.Watchdog{
+			Name: "watchdog",
+			WatchdogDevice: v1.WatchdogDevice{
+				I6300ESB: &v1.I6300ESBWatchdog{
+					Action: action,
+				},
+			},
+		}
+	}
+}
+
 // WithResourceMemory specifies the vmi memory resource.
 func WithResourceMemory(value string) Option {
 	return func(vmi *v1.VirtualMachineInstance) {
@@ -132,13 +146,28 @@ func WithLimitCPU(value string) Option {
 	}
 }
 
-// WithNodeSelectorFor ensures that the VMI gets scheduled on the specified node
-func WithNodeSelectorFor(node *k8sv1.Node) Option {
+func WithDownwardMetricsVolume(volumeName string) Option {
 	return func(vmi *v1.VirtualMachineInstance) {
-		if vmi.Spec.NodeSelector == nil {
-			vmi.Spec.NodeSelector = map[string]string{}
-		}
-		vmi.Spec.NodeSelector["kubernetes.io/hostname"] = node.Name
+		vmi.Spec.Volumes = append(vmi.Spec.Volumes, v1.Volume{
+			Name: volumeName,
+			VolumeSource: v1.VolumeSource{
+				DownwardMetrics: &v1.DownwardMetricsVolumeSource{},
+			}})
+
+		vmi.Spec.Domain.Devices.Disks = append(vmi.Spec.Domain.Devices.Disks, v1.Disk{
+			Name: volumeName,
+			DiskDevice: v1.DiskDevice{
+				Disk: &v1.DiskTarget{
+					Bus: v1.DiskBusVirtio,
+				},
+			},
+		})
+	}
+}
+
+func WithDownwardMetricsChannel() Option {
+	return func(vmi *v1.VirtualMachineInstance) {
+		vmi.Spec.Domain.Devices.DownwardMetrics = &v1.DownwardMetrics{}
 	}
 }
 
@@ -169,12 +198,29 @@ func WithUefi(secureBoot bool) Option {
 }
 
 // WithSEV adds `launchSecurity` with `sev`.
-func WithSEV() Option {
+func WithSEV(isESEnabled bool) Option {
 	return func(vmi *v1.VirtualMachineInstance) {
+		vmi.Spec.Domain.LaunchSecurity = &v1.LaunchSecurity{
+			SEV: &v1.SEV{
+				Policy: &v1.SEVPolicy{
+					EncryptedState: &isESEnabled,
+				},
+			},
+		}
+	}
+}
+
+func WithSEVAttestation() Option {
+	return func(vmi *v1.VirtualMachineInstance) {
+		startStrategy := v1.StartStrategyPaused
+		vmi.Spec.StartStrategy = &startStrategy
 		if vmi.Spec.Domain.LaunchSecurity == nil {
 			vmi.Spec.Domain.LaunchSecurity = &v1.LaunchSecurity{}
 		}
-		vmi.Spec.Domain.LaunchSecurity.SEV = &v1.SEV{}
+		if vmi.Spec.Domain.LaunchSecurity.SEV == nil {
+			vmi.Spec.Domain.LaunchSecurity.SEV = &v1.SEV{}
+		}
+		vmi.Spec.Domain.LaunchSecurity.SEV.Attestation = &v1.SEVAttestation{}
 	}
 }
 
@@ -191,36 +237,22 @@ func WithCPUFeature(featureName, policy string) Option {
 	}
 }
 
-func WithPasstInterfaceWithPort() Option {
-	return WithInterface(InterfaceDeviceWithPasstBinding([]v1.Port{{Port: 1234, Protocol: "TCP"}}...))
+func WithEvictionStrategy(evictionStrategy v1.EvictionStrategy) Option {
+	return func(vmi *v1.VirtualMachineInstance) {
+		vmi.Spec.EvictionStrategy = &evictionStrategy
+	}
 }
 
-func WithNodeAffinityFor(node *k8sv1.Node) Option {
+func WithStartStrategy(startStrategy v1.StartStrategy) Option {
 	return func(vmi *v1.VirtualMachineInstance) {
-		nodeSelectorTerm := k8sv1.NodeSelectorTerm{
-			MatchExpressions: []k8sv1.NodeSelectorRequirement{
-				{Key: "kubernetes.io/hostname", Operator: k8sv1.NodeSelectorOpIn, Values: []string{node.Name}},
-			},
-		}
+		vmi.Spec.StartStrategy = &startStrategy
+	}
+}
 
-		if vmi.Spec.Affinity == nil {
-			vmi.Spec.Affinity = &k8sv1.Affinity{}
-		}
-
-		if vmi.Spec.Affinity.NodeAffinity == nil {
-			vmi.Spec.Affinity.NodeAffinity = &k8sv1.NodeAffinity{}
-		}
-
-		if vmi.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution == nil {
-			vmi.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution = &k8sv1.NodeSelector{}
-		}
-
-		if vmi.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms == nil {
-			vmi.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms = []k8sv1.NodeSelectorTerm{}
-		}
-
-		vmi.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms =
-			append(vmi.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms, nodeSelectorTerm)
+func WithoutSerialConsole() Option {
+	return func(vmi *v1.VirtualMachineInstance) {
+		enabled := false
+		vmi.Spec.Domain.Devices.AutoattachSerialConsole = &enabled
 	}
 }
 

@@ -16,7 +16,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * Copyright 2023 Red Hat, Inc.
+ * Copyright 2024 Red Hat, Inc.
  *
  */
 
@@ -52,9 +52,17 @@ func SetObjectDefaults_HyperConverged(in *HyperConverged) {
 		var ptrVar1 bool = false
 		in.Spec.FeatureGates.DeployTektonTaskResources = &ptrVar1
 	}
+	if in.Spec.FeatureGates.DeployVMConsoleProxy == nil {
+		var ptrVar1 bool = false
+		in.Spec.FeatureGates.DeployVMConsoleProxy = &ptrVar1
+	}
 	if in.Spec.FeatureGates.DeployKubeSecondaryDNS == nil {
 		var ptrVar1 bool = false
 		in.Spec.FeatureGates.DeployKubeSecondaryDNS = &ptrVar1
+	}
+	if in.Spec.FeatureGates.NonRoot == nil {
+		var ptrVar1 bool = true
+		in.Spec.FeatureGates.NonRoot = &ptrVar1
 	}
 	if in.Spec.FeatureGates.DisableMDevConfiguration == nil {
 		var ptrVar1 bool = false
@@ -63,6 +71,22 @@ func SetObjectDefaults_HyperConverged(in *HyperConverged) {
 	if in.Spec.FeatureGates.PersistentReservation == nil {
 		var ptrVar1 bool = false
 		in.Spec.FeatureGates.PersistentReservation = &ptrVar1
+	}
+	if in.Spec.FeatureGates.EnableManagedTenantQuota == nil {
+		var ptrVar1 bool = false
+		in.Spec.FeatureGates.EnableManagedTenantQuota = &ptrVar1
+	}
+	if in.Spec.FeatureGates.AutoResourceLimits == nil {
+		var ptrVar1 bool = false
+		in.Spec.FeatureGates.AutoResourceLimits = &ptrVar1
+	}
+	if in.Spec.FeatureGates.AlignCPUs == nil {
+		var ptrVar1 bool = false
+		in.Spec.FeatureGates.AlignCPUs = &ptrVar1
+	}
+	if in.Spec.FeatureGates.EnableApplicationAwareQuota == nil {
+		var ptrVar1 bool = false
+		in.Spec.FeatureGates.EnableApplicationAwareQuota = &ptrVar1
 	}
 	if in.Spec.LiveMigrationConfig.ParallelMigrationsPerCluster == nil {
 		var ptrVar1 uint32 = 5
@@ -108,6 +132,12 @@ func SetObjectDefaults_HyperConverged(in *HyperConverged) {
 			panic(err)
 		}
 	}
+	if in.Spec.ResourceRequirements != nil {
+		if in.Spec.ResourceRequirements.VmiCPUAllocationRatio == nil {
+			var ptrVar1 int = 10
+			in.Spec.ResourceRequirements.VmiCPUAllocationRatio = &ptrVar1
+		}
+	}
 	if in.Spec.WorkloadUpdateStrategy.WorkloadUpdateMethods == nil {
 		if err := json.Unmarshal([]byte(`["LiveMigrate"]`), &in.Spec.WorkloadUpdateStrategy.WorkloadUpdateMethods); err != nil {
 			panic(err)
@@ -124,6 +154,31 @@ func SetObjectDefaults_HyperConverged(in *HyperConverged) {
 	}
 	if in.Spec.UninstallStrategy == "" {
 		in.Spec.UninstallStrategy = "BlockUninstallIfWorkloadsExist"
+	}
+	if in.Spec.VirtualMachineOptions == nil {
+		if err := json.Unmarshal([]byte(`{"disableFreePageReporting": false, "disableSerialConsoleLog": true}`), &in.Spec.VirtualMachineOptions); err != nil {
+			panic(err)
+		}
+	}
+	if in.Spec.VirtualMachineOptions != nil {
+		if in.Spec.VirtualMachineOptions.DisableFreePageReporting == nil {
+			var ptrVar1 bool = false
+			in.Spec.VirtualMachineOptions.DisableFreePageReporting = &ptrVar1
+		}
+		if in.Spec.VirtualMachineOptions.DisableSerialConsoleLog == nil {
+			var ptrVar1 bool = true
+			in.Spec.VirtualMachineOptions.DisableSerialConsoleLog = &ptrVar1
+		}
+	}
+	if in.Spec.HigherWorkloadDensity == nil {
+		if err := json.Unmarshal([]byte(`{"memoryOvercommitPercentage": 100}`), &in.Spec.HigherWorkloadDensity); err != nil {
+			panic(err)
+		}
+	}
+	if in.Spec.HigherWorkloadDensity != nil {
+		if in.Spec.HigherWorkloadDensity.MemoryOvercommitPercentage == 0 {
+			in.Spec.HigherWorkloadDensity.MemoryOvercommitPercentage = 100
+		}
 	}
 }
 
