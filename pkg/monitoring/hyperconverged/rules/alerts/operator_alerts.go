@@ -22,6 +22,19 @@ const (
 func operatorAlerts() []promv1.Rule {
 	return []promv1.Rule{
 		{
+			Alert: "VMMemoryOvercommitTooHigh",
+			Expr:  intstr.FromString("kubevirt_hco_memory_overcommit_percentage > 150"),
+			For:   ptr.To(promv1.Duration("10m")),
+			Annotations: map[string]string{
+				"description": "The cluster-wide VM memory overcommit percentage exceeds 150%, which may lead to memory pressure and VM evictions.",
+				"summary":     "HCO memory overcommit percentage is dangerously high ({{ $value }}%).",
+			},
+			Labels: map[string]string{
+				severityAlertLabelKey:     "warning",
+				healthImpactAlertLabelKey: "warning",
+			},
+		},
+		{
 			Alert: outOfBandUpdateAlert,
 			Expr:  intstr.FromString("sum by(component_name) ((round(increase(kubevirt_hco_out_of_band_modifications_total[10m]))>0 and kubevirt_hco_out_of_band_modifications_total offset 10m) or (kubevirt_hco_out_of_band_modifications_total != 0 unless kubevirt_hco_out_of_band_modifications_total offset 10m))"),
 			Annotations: map[string]string{
